@@ -1,0 +1,1 @@
+{"version":3,"file":"strike-manager.d.ts","sourceRoot":"","sources":["strike-manager.ts"],"names":[],"mappings":"AAEA,qBAAa,aAAa;WACT,SAAS,CAAC,OAAO,EAAE,MAAM,EAAE,SAAS,EAAE,MAAM,EAAE,MAAM,EAAE,MAAM,EAAE,YAAY,EAAE,MAAM,EAAE,QAAQ,EAAE,MAAM;WAsEpG,YAAY,CAAC,QAAQ,EAAE,MAAM;WAI7B,qBAAqB,CAAC,OAAO,EAAE,MAAM,EAAE,SAAS,EAAE,MAAM;CAiCxE"}

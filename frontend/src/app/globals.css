@@ -1,0 +1,76 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", var(--font-geist-sans), Arial, sans-serif;
+  --font-mono: var(--font-geist-mono);
+
+  /* Premium Brand Colors (e.g. vibrant violet/indigo) */
+  --color-brand: #8b5cf6;
+  --color-brand-hover: #7c3aed;
+  --color-brand-light: rgba(139, 92, 246, 0.1);
+  --color-brand-glow: rgba(139, 92, 246, 0.4);
+  
+  /* Core Surfaces */
+  --color-surface: #121214;        /* Dark background for cards */
+  --color-surface-hover: #1e1e24;  /* Slightly lighter for hover */
+  --color-surface-active: #27272a; /* Click state */
+  
+  /* Borders and Lines */
+  --color-border: #27272a;
+  --color-border-subtle: rgba(255, 255, 255, 0.05);
+  
+  /* Utility Shadows (Premium Multi-layered) */
+  --shadow-premium: 0 4px 20px -2px rgba(0, 0, 0, 0.4), 0 0 3px rgba(255,255,255,0.05) inset;
+  --shadow-glow: 0 0 20px var(--color-brand-glow);
+}
+
+:root {
+  --background: #09090b; /* Very dark zinc */
+  --foreground: #fafafa;
+  --foreground-muted: #a1a1aa; /* Zinc 400 */
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Glassmorphism Utilities */
+.glass {
+  background: rgba(18, 18, 20, 0.6);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-border-subtle);
+}
+
+/* Smooth global transitions */
+* {
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+  transition-duration: 150ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Custom scrollbar for premium feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 9999px; /* Fully rounded */
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* Remove default focus ring, use custom */
+*:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+}
