@@ -7,8 +7,8 @@ export default async function GroupsPage() {
     let instances: any[] = [];
 
     try {
-        // Fetch instances from our backend which proxies to Evolution API
-        const res = await fetch('http://127.0.0.1:3001/api/instances', { cache: 'no-store' });
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:3001';
+        const res = await fetch(`${apiUrl}/api/instances`, { cache: 'no-store' });
         const json = await res.json();
         if (json.success) {
             instances = json.data || [];

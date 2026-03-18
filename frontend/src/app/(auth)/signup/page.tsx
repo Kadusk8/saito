@@ -1,11 +1,12 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Mail, ArrowRight, ShieldCheck } from 'lucide-react';
 
-export default function SignupPage() {
+function SignupContent() {
     const searchParams = useSearchParams();
     const email = searchParams.get('email');
     const success = searchParams.get('success');
@@ -87,5 +88,17 @@ export default function SignupPage() {
                 Saito Access Provisioning &copy; {new Date().getFullYear()}
             </p>
         </div>
+    );
+}
+
+export default function SignupPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center bg-background text-white">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-brand font-bold" />
+            </div>
+        }>
+            <SignupContent />
+        </Suspense>
     );
 }
