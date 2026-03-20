@@ -1,0 +1,11 @@
+saito.app.br, app.saito.app.br {
+    reverse_proxy frontend:3000
+}
+
+webhook.saito.app.br {
+    reverse_proxy backend:3001
+}
+
+api.saito.app.br {
+    reverse_proxy evolution-api:8080
+}
