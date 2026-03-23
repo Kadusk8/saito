@@ -9,13 +9,14 @@ export default async function InstanceGroupsPage({ params }: { params: Promise<{
     const { name } = await params;
 
     const supabase = await createClient();
-    const { data: instanceData } = await supabase.from('instances').select('id, name').eq('name', name).single();
+    const { data: instanceData } = await supabase.from('instances').select('id, name, status').eq('name', name).single();
 
     let monitoredGroups: any[] = [];
     if (instanceData) {
         const { data: groupsData } = await supabase.from('groups').select('*').eq('instance_id', instanceData.id);
         if (groupsData) monitoredGroups = groupsData;
     }
+    const isConnected = instanceData?.status === 'open';
 
     return (
         <div className="p-8 pb-20 sm:p-12 w-full max-w-7xl mx-auto space-y-10 relative">
@@ -36,20 +37,36 @@ export default async function InstanceGroupsPage({ params }: { params: Promise<{
                             </span>
                         </div>
                         <p className="text-foreground-muted font-medium">
-                            Conectada em: <span className="text-brand/90 font-bold">{name}</span>
+                            Instância: <span className="text-brand/90 font-bold">{name}</span>
+                            <span className={`ml-3 text-xs font-bold px-2 py-0.5 rounded-md border ${isConnected ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20'}`}>
+                                {isConnected ? 'Conectada' : 'Desconectada'}
+                            </span>
                         </p>
                     </div>
                 </div>
                 {instanceData && (
                     <div className="flex flex-wrap items-center gap-3 shrink-0">
                         <CreateGroupButton instanceName={name} />
-                        <SyncGroupsButton instanceName={name} isConnected={true} />
+                        <SyncGroupsButton instanceName={name} isConnected={isConnected} />
                     </div>
                 )}
             </div>
 
             {/* Content */}
-            {monitoredGroups.length === 0 ? (
+            {!isConnected ? (
+                <div className="glass border border-dashed border-rose-500/30 rounded-3xl p-16 text-center flex flex-col items-center justify-center gap-4 bg-rose-500/5 relative z-10">
+                    <div className="w-16 h-16 rounded-full bg-surface border border-rose-500/20 flex items-center justify-center text-rose-500 mb-2 shadow-[0_0_15px_rgba(244,63,94,0.1)]">
+                        <ShieldAlert className="w-8 h-8 opacity-80" />
+                    </div>
+                    <div>
+                        <p className="text-white font-semibold text-lg">Instância Desconectada</p>
+                        <p className="text-foreground-muted text-sm mt-1 max-w-md mx-auto">Conecte seu WhatsApp lendo o QR Code no painel de instâncias para visualizar e gerenciar os grupos.</p>
+                        <Link href="/dashboard/whatsapp" className="inline-block mt-6 px-6 py-2.5 bg-brand/10 hover:bg-brand/20 text-brand border border-brand/20 rounded-xl font-bold transition-all shadow-sm">
+                            Ir para Conexões
+                        </Link>
+                    </div>
+                </div>
+            ) : monitoredGroups.length === 0 ? (
                 <div className="glass border border-dashed border-border-subtle rounded-3xl p-16 text-center flex flex-col items-center justify-center gap-4 bg-surface/30 relative z-10">
                     <div className="w-16 h-16 rounded-full bg-surface border border-border flex items-center justify-center text-neutral-600 mb-2">
                         <MessageSquare className="w-8 h-8 opacity-50" />
