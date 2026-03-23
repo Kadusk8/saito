@@ -62,6 +62,33 @@ export default async function aiRoutes(server: FastifyInstance) {
         }));
     });
 
+    // Delete a specific chat and its messages
+    server.delete('/api/ai/chats/:chatId', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
+        const { chatId } = request.params as { chatId: string };
+        const supabaseAuth = getAuthSupabase(request);
+
+        // Delete messages first to avoid foreign key constraints (if not using cascade)
+        const { error: msgError } = await supabaseAuth
+            .from('ai_messages')
+            .delete()
+            .eq('chat_id', chatId);
+
+        if (msgError) {
+            return reply.code(500).send({ error: msgError.message });
+        }
+
+        const { error } = await supabaseAuth
+            .from('ai_chats')
+            .delete()
+            .eq('id', chatId);
+
+        if (error) {
+            return reply.code(500).send({ error: error.message });
+        }
+
+        return { success: true };
+    });
+
     server.post('/api/ai/chat', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         const { messages, chatId: existingChatId, title } = request.body as {
             messages: { role: 'user' | 'model'; parts: { text: string }[] }[],

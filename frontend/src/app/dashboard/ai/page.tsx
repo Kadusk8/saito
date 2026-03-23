@@ -53,6 +53,30 @@ export default function AgentePage() {
         setSelectedChatId(undefined);
     };
 
+    const deleteChat = async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation(); // Previne o clique no botão que seleciona a conversa
+        // Optimistic UI update
+        setChats(prev => prev.filter(c => c.id !== id));
+        if (selectedChatId === id) {
+            setSelectedChatId(undefined); // Reset if deleting current active chat
+        }
+
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            await fetch(`${BACKEND_URL}/api/ai/chats/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${session?.access_token}`,
+                },
+            });
+            // If we want we can re-fetch chats to be sure
+        } catch (error) {
+            console.error('Failed to delete chat:', error);
+            // Revert changes could be implemented here
+            fetchChats();
+        }
+    };
+
     return (
         <div className="flex h-[calc(100vh-2rem)] gap-6 p-6 md:p-8 max-w-[1600px] mx-auto animate-in fade-in duration-500 relative">
             {/* Ambient Background Glow */}
@@ -108,6 +132,13 @@ export default function AgentePage() {
                                             {format(new Date(chat.updated_at), "dd 'de' MMM, HH:mm", { locale: ptBR })}
                                         </div>
                                     </div>
+                                    <button 
+                                        onClick={(e) => deleteChat(e, chat.id)}
+                                        className="opacity-0 group-hover:opacity-100 p-2 text-neutral-500 hover:text-red-400 hover:bg-red-400/10 rounded-xl transition-all mr-1 shrink-0"
+                                        title="Apagar conversa"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
+                                    </button>
                                 </div>
                                 {selectedChatId === chat.id && (
                                     <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-md bg-brand shadow-[0_0_10px_rgba(230,57,70,0.5)]" />

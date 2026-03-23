@@ -41,8 +41,17 @@ export default function NewCampaignPage() {
         (async () => {
             try {
                 const supabase = createClient();
-                const { data } = await supabase.from('instances').select('id, name, status');
-                setInstances(data || []);
+                const { data: { session } } = await supabase.auth.getSession();
+                const res = await fetch(`${API}/api/instances`, {
+                    headers: session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
+                });
+                const json = await res.json();
+                if (json.success) {
+                    const active = (json.data || []).filter((i: any) => i.connectionStatus === 'open');
+                    setInstances(active);
+                } else {
+                    setInstances([]);
+                }
             } catch { setInstances([]); }
         })();
     }, []);

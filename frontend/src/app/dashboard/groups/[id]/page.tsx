@@ -249,7 +249,7 @@ export default function GroupSettingsPage({ params }: { params: Promise<{ id: st
                             <div className="flex gap-3">
                                 <Bot className="w-5 h-5 text-brand mt-0.5" />
                                 <div>
-                                    <h4 className="text-white font-medium text-sm">Blacklist Dinâmica (Gemini)</h4>
+                                    <h4 className="text-white font-medium text-sm">Blacklist Dinâmica</h4>
                                     <p className="text-neutral-500 text-xs mt-1 max-w-md">Interpreta mensagens para barrar termos maliciósos mesmo disfarçados.</p>
 
                                     {rules.enforceTopic && (

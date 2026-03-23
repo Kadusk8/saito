@@ -38,8 +38,19 @@ export default function NovoPlanejadorPage() {
     // Fetch instances on mount
     useEffect(() => {
         async function fetchInstances() {
-            const { data } = await supabase.from('instances').select('id, name, status');
-            setInstances(data || []);
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                const res = await fetch(`${API}/api/instances`, {
+                    headers: { 'Authorization': `Bearer ${session?.access_token}` },
+                });
+                const json = await res.json();
+                if (json.success) {
+                    const active = (json.data || []).filter((i: any) => i.connectionStatus === 'open');
+                    setInstances(active);
+                }
+            } catch (e) {
+                console.error(e);
+            }
         }
         fetchInstances();
     }, []);

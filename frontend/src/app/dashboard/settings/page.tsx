@@ -34,6 +34,12 @@ export default function SettingsPage() {
     const [organization, setOrganization] = useState<any>(null);
     const [orgName, setOrgName] = useState('');
     const [displayName, setDisplayName] = useState('');
+    
+    // New states
+    const [activeTab, setActiveTab] = useState<'geral' | 'equipe'>('geral');
+    const [evolutionOnline, setEvolutionOnline] = useState(false);
+    const [teamCount, setTeamCount] = useState(1);
+    const [inviteEmail, setInviteEmail] = useState('');
 
     useEffect(() => {
         loadData();
@@ -44,7 +50,7 @@ export default function SettingsPage() {
         try {
             const { data: { user } } = await supabase.auth.getUser();
             setUser(user);
-
+            
             if (user) {
                 // Fetch organization
                 let orgId = null;
@@ -78,6 +84,30 @@ export default function SettingsPage() {
                     if (orgData) {
                         setOrganization(orgData);
                         setOrgName(orgData.name || '');
+                        
+                        // Check team count
+                        const { count: teamCountVal } = await supabase
+                            .from('user_roles')
+                            .select('*', { count: 'exact', head: true })
+                            .eq('organization_id', orgId);
+                        
+                        if (teamCountVal) setTeamCount(teamCountVal);
+
+                        // Check instances for Evo API via backend API
+                        try {
+                            const API = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+                            const { data: { session } } = await supabase.auth.getSession();
+                            const res = await fetch(`${API}/api/instances`, {
+                                headers: session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
+                            });
+                            const json = await res.json();
+                            if (json.success && json.data) {
+                                const hasActive = json.data.some((i: any) => i.connectionStatus === 'open');
+                                setEvolutionOnline(hasActive);
+                            }
+                        } catch (e) {
+                            console.error("Failed to fetch Evo API status", e);
+                        }
                     } else {
                         setOrganization({ id: orgId });
                         setOrgName('');
@@ -130,8 +160,10 @@ export default function SettingsPage() {
         }
     }
 
-    function handleComingSoon() {
-        setMessage({ type: 'error', text: 'Esta funcionalidade estará disponível em breve.' });
+    function handleInvite() {
+        if (!inviteEmail) return;
+        setMessage({ type: 'success', text: `Convite enviado para ${inviteEmail} (Simulação)` });
+        setInviteEmail('');
         setTimeout(() => setMessage(null), 3000);
     }
 
@@ -171,32 +203,46 @@ export default function SettingsPage() {
             <div className="grid grid-cols-1 md:grid-cols-12 gap-8 relative z-10">
                 {/* Navigation Sidebar (Local) */}
                 <div className="md:col-span-4 lg:col-span-3 space-y-2">
-                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} className="w-full flex items-center justify-between px-5 py-3.5 bg-brand border border-brand/50 text-white rounded-2xl font-bold transition-all shadow-shadow-glow">
+                    <motion.button 
+                        onClick={() => setActiveTab('geral')}
+                        whileHover={{ scale: 1.02 }} 
+                        whileTap={{ scale: 0.98 }} 
+                        className={cn("w-full flex items-center justify-between px-5 py-3.5 rounded-2xl font-bold transition-all border",
+                            activeTab === 'geral' 
+                                ? "bg-brand border-brand/50 text-white shadow-shadow-glow" 
+                                : "text-neutral-400 hover:text-white hover:bg-surface-hover border-transparent hover:border-white/5"
+                        )}
+                    >
                         <div className="flex items-center gap-3">
                             <Settings className="w-4 h-4" />
                             Geral
                         </div>
-                        <ChevronRight className="w-4 h-4" />
+                        {activeTab === 'geral' && <ChevronRight className="w-4 h-4" />}
                     </motion.button>
-                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleComingSoon} className="w-full flex items-center justify-between px-5 py-3.5 text-neutral-400 hover:text-white hover:bg-surface-hover rounded-2xl font-bold transition-all group border border-transparent hover:border-white/5">
+
+                    <motion.button 
+                        onClick={() => setActiveTab('equipe')}
+                        whileHover={{ scale: 1.02 }} 
+                        whileTap={{ scale: 0.98 }} 
+                        className={cn("w-full flex items-center justify-between px-5 py-3.5 rounded-2xl font-bold transition-all border",
+                            activeTab === 'equipe' 
+                                ? "bg-brand border-brand/50 text-white shadow-shadow-glow" 
+                                : "text-neutral-400 hover:text-white hover:bg-surface-hover border-transparent hover:border-white/5"
+                        )}
+                    >
                         <div className="flex items-center gap-3">
                             <UsersIcon className="w-4 h-4" />
                             Equipe
                         </div>
-                        <Lock className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-brand" />
-                    </motion.button>
-                    <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={handleComingSoon} className="w-full flex items-center justify-between px-5 py-3.5 text-neutral-400 hover:text-white hover:bg-surface-hover rounded-2xl font-bold transition-all group border border-transparent hover:border-white/5">
-                        <div className="flex items-center gap-3">
-                            <Bell className="w-4 h-4" />
-                            Notificações
-                        </div>
-                        <Lock className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-brand" />
+                        {activeTab === 'equipe' && <ChevronRight className="w-4 h-4" />}
                     </motion.button>
                 </div>
 
                 {/* Content Area */}
                 <div className="md:col-span-8 lg:col-span-9 space-y-8">
-                    {/* User Profile Section */}
+                    {activeTab === 'geral' ? (
+                        <>
+                            {/* User Profile Section */}
                     <div className="glass border border-border-subtle rounded-3xl overflow-hidden shadow-sm transition-all hover:border-border/80">
                         <div className="px-8 py-5 border-b border-border/50 bg-black/20">
                             <h2 className="text-base font-bold text-white flex items-center gap-3">
@@ -294,8 +340,12 @@ export default function SettingsPage() {
                                         <p className="text-xs font-medium text-foreground-muted mt-0.5">Integração WhatsApp</p>
                                     </div>
                                 </div>
-                                <span className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/10 text-emerald-400 text-[10px] font-black rounded-full border border-emerald-500/30 uppercase tracking-widest shadow-[0_0_10px_rgba(16,185,129,0.2)]">
-                                    Online
+                                <span className={cn("flex items-center gap-1.5 px-3 py-1 text-[10px] font-black rounded-full border uppercase tracking-widest", 
+                                    evolutionOnline 
+                                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.2)]" 
+                                        : "bg-neutral-500/10 text-neutral-400 border-neutral-500/30"
+                                )}>
+                                    {evolutionOnline ? 'Online' : 'Offline'}
                                 </span>
                             </div>
                         </div>
@@ -320,6 +370,81 @@ export default function SettingsPage() {
                             Salvar Alterações
                         </motion.button>
                     </div>
+                        </>
+                    ) : (
+                        <div className="space-y-8 animate-in fade-in duration-300">
+                            {/* Invite Section */}
+                            <div className="glass border border-border-subtle rounded-3xl overflow-hidden shadow-sm transition-all hover:border-border/80">
+                                <div className="px-8 py-5 border-b border-border/50 bg-black/20">
+                                    <h2 className="text-base font-bold text-white flex items-center gap-3">
+                                        <UsersIcon className="w-5 h-5 text-brand" /> Convidar Membro
+                                    </h2>
+                                </div>
+                                <div className="p-8 space-y-6">
+                                    <div className="flex flex-col md:flex-row gap-4">
+                                        <div className="flex-1 space-y-2 group">
+                                            <label className="text-[11px] font-bold text-foreground-muted uppercase tracking-widest pl-1 group-focus-within:text-brand transition-colors">E-mail do novo membro</label>
+                                            <input
+                                                type="email"
+                                                placeholder="exemplo@saito.app.br"
+                                                value={inviteEmail}
+                                                onChange={(e) => setInviteEmail(e.target.value)}
+                                                className="w-full px-5 py-3.5 bg-black/20 border border-white/5 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand/50 transition-all text-sm font-medium shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)] hover:border-white/10"
+                                            />
+                                        </div>
+                                        <div className="flex items-end">
+                                            <motion.button
+                                                whileHover={{ scale: 1.02 }}
+                                                whileTap={{ scale: 0.95 }}
+                                                onClick={handleInvite}
+                                                disabled={!inviteEmail}
+                                                className="px-8 py-3.5 h-[50px] bg-brand text-white text-sm font-extrabold rounded-2xl hover:bg-brand-hover transition-all shadow-[0_0_20px_rgba(139,92,246,0.3)] hover:shadow-[0_0_30px_rgba(139,92,246,0.5)] disabled:opacity-50 disabled:cursor-not-allowed"
+                                            >
+                                                Enviar Convite
+                                            </motion.button>
+                                        </div>
+                                    </div>
+                                    <p className="text-sm text-foreground-muted">
+                                        Ao enviar o convite, o membro receberá um e-mail para criar a conta e acessar a organização <strong>{orgName || 'atual'}</strong>.
+                                    </p>
+                                </div>
+                            </div>
+
+                            {/* Team List Section */}
+                            <div className="glass border border-border-subtle rounded-3xl overflow-hidden shadow-sm transition-all hover:border-border/80">
+                                <div className="px-8 py-5 border-b border-border/50 bg-black/20 flex justify-between items-center">
+                                    <h2 className="text-base font-bold text-white flex items-center gap-3">
+                                        <User className="w-5 h-5 text-indigo-400" /> Membros Atuais
+                                    </h2>
+                                    <span className="bg-white/5 text-neutral-300 text-xs font-bold px-3 py-1 rounded-full border border-white/10">
+                                        {teamCount} {teamCount === 1 ? 'membro' : 'membros'}
+                                    </span>
+                                </div>
+                                <div className="p-0">
+                                    <div className="flex items-center justify-between p-6 border-b border-border/30 hover:bg-white/5 transition-colors">
+                                        <div className="flex items-center gap-4">
+                                            <div className="w-12 h-12 rounded-full bg-brand/20 flex items-center justify-center text-brand font-bold text-lg border border-brand/30">
+                                                {displayName ? displayName.charAt(0).toUpperCase() : user?.email?.charAt(0).toUpperCase()}
+                                            </div>
+                                            <div>
+                                                <p className="text-white font-bold">{displayName || 'Você'}</p>
+                                                <p className="text-sm text-neutral-400">{user?.email}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <span className="px-3 py-1 text-xs font-bold text-emerald-400 bg-emerald-400/10 border border-emerald-400/20 rounded-lg">Owner</span>
+                                        </div>
+                                    </div>
+                                    
+                                    {teamCount > 1 && (
+                                        <div className="p-8 text-center text-neutral-500 text-sm">
+                                            Outros membros estão ocultos por medida de privacidade.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

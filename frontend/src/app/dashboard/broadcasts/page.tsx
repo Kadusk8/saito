@@ -14,11 +14,20 @@ export default function BroadcastsPage() {
     // Load instances on mount
     useEffect(() => {
         const supabase = createClient();
-        supabase.from('instances').select('id, name').then(({ data }) => {
-            if (data && data.length > 0) {
-                setInstances(data);
-                setSelectedInstance(data[0].name);
-            }
+        const API = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+        supabase.auth.getSession().then(({ data: { session } }) => {
+            fetch(`${API}/api/instances`, {
+                headers: session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {}
+            })
+            .then(res => res.json())
+            .then(json => {
+                if (json.success) {
+                    const active = (json.data || []).filter((i: any) => i.connectionStatus === 'open');
+                    setInstances(active);
+                    if (active.length > 0) setSelectedInstance(active[0].name);
+                }
+            })
+            .catch(console.error);
         });
     }, []);
 
