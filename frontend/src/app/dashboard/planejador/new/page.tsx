@@ -64,8 +64,9 @@ export default function NovoPlanejadorPage() {
         
         // Use the first instance available or a fallback if none found
         const targetInstanceId = instances[0]?.id;
+        const typeLabel = PRODUCT_TYPES.find(t => t.key === type)?.label || type;
         
-        let plan;
+        let plan: any;
         try {
             const res = await fetch(`${API}/api/planner`, {
                 method: 'POST',
@@ -80,18 +81,31 @@ export default function NovoPlanejadorPage() {
                 }),
             });
             plan = await res.json();
-            if (plan.id) setPlanId(plan.id);
-        } catch (err) {
+            if (res.ok && plan.id) {
+                setPlanId(plan.id);
+            } else {
+                console.error("Plan creation error:", plan);
+                setMessages(prev => [...prev, 
+                    { role: 'user', text: typeLabel },
+                    { role: 'model', text: `⚠️ **Erro Crítico:** Não foi possível criar o plano no servidor. Motivo: ${plan.error || 'Desconhecido'}.\n\nPara o botão "Ver Timeline" funcionar depois, o plano precisa ser salvo agora. Recarregue a página ou confira sua assinatura/banco e tente novamente.` }
+                ]);
+                return;
+            }
+        } catch (err: any) {
             console.error('Plan creation failed:', err);
+            setMessages(prev => [...prev, 
+                { role: 'user', text: typeLabel },
+                { role: 'model', text: `⚠️ **Erro de Conexão:** Falha ao comunicar com a API para criar o plano. ${err.message}` }
+            ]);
+            return;
         }
 
         // Add user message
-        const typeLabel = PRODUCT_TYPES.find(t => t.key === type)?.label || type;
         const userMsg: Message = { role: 'user', text: typeLabel };
         setMessages(prev => [...prev, userMsg]);
 
-        // Call AI even if planId is missing (stateless mode fallback)
-        await callAI([...messages, userMsg], type, plan?.id || '');
+        // Call AI 
+        await callAI([...messages, userMsg], type, plan.id);
     }
 
     async function callAI(history: Message[], type: string, pid: string) {

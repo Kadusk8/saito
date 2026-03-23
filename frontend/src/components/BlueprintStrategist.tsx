@@ -77,9 +77,10 @@ export function BlueprintStrategist({ campaignId, onPlanApplied }: BlueprintStra
     async function selectProductType(type: string) {
         setProductType(type);
         const { data: { session } } = await supabase.auth.getSession();
+        const typeLabel = PRODUCT_TYPES.find(t => t.key === type)?.label || type;
         
         // Create plan linked to campaign
-        let newPlan;
+        let newPlan: any;
         try {
             const res = await fetch(`${API}/api/planner`, {
                 method: 'POST',
@@ -94,16 +95,31 @@ export function BlueprintStrategist({ campaignId, onPlanApplied }: BlueprintStra
                 }),
             });
             newPlan = await res.json();
-            if (newPlan.id) setPlan(newPlan);
-        } catch (err) {
+            if (res.ok && newPlan.id) {
+                setPlan(newPlan);
+            } else {
+                console.error("Plan creation error:", newPlan);
+                const typeLabel = PRODUCT_TYPES.find(t => t.key === type)?.label || type;
+                setMessages(prev => [...prev, 
+                    { role: 'user', text: typeLabel },
+                    { role: 'model', text: `⚠️ **Erro Crítico:** Não foi possível vincular o plano à campanha atual. Motivo: ${newPlan.error || 'Desconhecido'}.` }
+                ]);
+                return;
+            }
+        } catch (err: any) {
             console.error('Plan creation failed:', err);
+            const typeLabel = PRODUCT_TYPES.find(t => t.key === type)?.label || type;
+            setMessages(prev => [...prev, 
+                { role: 'user', text: typeLabel },
+                { role: 'model', text: `⚠️ **Erro de Conexão:** Falha ao comunicar com a API. ${err.message}` }
+            ]);
+            return;
         }
 
-        const typeLabel = PRODUCT_TYPES.find(t => t.key === type)?.label || type;
         const userMsg: Message = { role: 'user', text: typeLabel };
         setMessages(prev => [...prev, userMsg]);
 
-        await callAI([...messages, userMsg], type, newPlan?.id || '');
+        await callAI([...messages, userMsg], type, newPlan.id);
     }
 
     async function callAI(history: Message[], type: string, pid: string) {

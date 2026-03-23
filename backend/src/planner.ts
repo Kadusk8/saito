@@ -57,7 +57,8 @@ FLUXO DE BRIEFING:
 4. Data de abertura do carrinho (Dia D)
 5. Gerar timeline e copies
 
-Ao gerar o plano final, finalize sua mensagem com um bloco JSON EXATAMENTE neste formato:
+Ao gerar o plano final, encerre a conversa de forma natural (por exemplo: "O plano está pronto! Vamos decolar! 🚀").
+**NUNCA**, sob nenhuma circunstância, mencione que você está anexando um bloco JSON, código, arquivo ou formato técnico. Apenas termine a frase educadamente, e após isso insira SILENCIOSAMENTE o bloco JSON EXATAMENTE neste formato:
 \`\`\`json
 {
   "plan_ready": true,
