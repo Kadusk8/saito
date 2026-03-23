@@ -3,14 +3,13 @@ version: '3.8'
 
 services:
   caddy:
-    image: caddy:2-alpine
+    build: ./caddy
     container_name: saito-caddy
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
