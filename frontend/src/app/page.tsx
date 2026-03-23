@@ -44,9 +44,9 @@ export default function LandingPage() {
                     <Link href="/login" className="text-sm font-semibold text-foreground-muted hover:text-white transition-colors">
                         Entrar
                     </Link>
-                    <Link href="/login" className="hidden md:flex items-center gap-2 px-6 py-2.5 bg-white text-black text-sm font-bold rounded-full hover:bg-neutral-200 transition-transform hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.2)]">
+                    <a href="#pricing" className="hidden md:flex items-center gap-2 px-6 py-2.5 bg-white text-black text-sm font-bold rounded-full hover:bg-neutral-200 transition-transform hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.2)]">
                         Começar Agora <ArrowRight className="w-4 h-4" />
-                    </Link>
+                    </a>
                 </div>
             </header>
 
@@ -73,10 +73,10 @@ export default function LandingPage() {
                         </motion.p>
 
                         <motion.div variants={fadeInUp} className="flex flex-col sm:flex-row items-center justify-center gap-5 pt-8 relative z-20 pointer-events-auto">
-                            <Link href="/login" className="w-full sm:w-auto px-10 py-5 bg-brand hover:bg-brand-hover text-white text-lg font-bold rounded-2xl transition-all shadow-premium hover:shadow-[0_0_60px_rgba(139,92,246,0.6)] flex items-center justify-center gap-2 group relative overflow-hidden">
+                            <a href="#pricing" className="w-full sm:w-auto px-10 py-5 bg-brand hover:bg-brand-hover text-white text-lg font-bold rounded-2xl transition-all shadow-premium hover:shadow-[0_0_60px_rgba(139,92,246,0.6)] flex items-center justify-center gap-2 group relative overflow-hidden">
                                 <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-12" />
                                 Proteger meus Lançamentos <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-                            </Link>
+                            </a>
                             <a href="#solucoes" className="w-full sm:w-auto px-10 py-5 glass hover:bg-surface-hover border border-border-subtle text-white text-lg font-bold rounded-2xl transition-all flex items-center justify-center group">
                                 Entender a IA
                             </a>
@@ -207,7 +207,51 @@ export default function LandingPage() {
                             <div className="flex-1 w-full relative">
                                 <div className="absolute inset-0 bg-brand/20 blur-[100px] rounded-full" />
                                 <div className="glass border border-white/10 rounded-3xl p-8 relative z-10 shadow-2xl bg-surface/40">
-                                    <img src="https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=1000&auto=format&fit=crop" alt="Dashboard Super Grupos" className="rounded-2xl border border-white/5 opacity-80" />
+                                    <div className="w-full h-64 md:h-[400px] flex items-center justify-center relative overflow-hidden bg-background/50 rounded-2xl border border-white/5 group">
+                                         {/* Animated Background Orbs */}
+                                         <div className="absolute inset-0 flex items-center justify-center filter blur-3xl opacity-40 mix-blend-screen">
+                                             <motion.div animate={{ rotate: 360, scale: [1, 1.2, 1] }} transition={{ duration: 10, repeat: Infinity, ease: "linear" }} className="w-40 h-40 bg-brand/60 rounded-full absolute -top-10 -left-10" />
+                                             <motion.div animate={{ rotate: -360, scale: [1, 1.3, 1] }} transition={{ duration: 12, repeat: Infinity, ease: "linear" }} className="w-40 h-40 bg-indigo-500/60 rounded-full absolute -bottom-10 -right-10" />
+                                         </div>
+
+                                         {/* Main Visual */}
+                                         <div className="relative z-10 flex flex-col items-center">
+                                             <motion.div 
+                                                animate={{ y: [0, -10, 0] }} 
+                                                transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                                                className="w-24 h-24 mb-6 rounded-2xl bg-gradient-to-br from-brand to-indigo-600 shadow-[0_0_40px_rgba(139,92,246,0.5)] flex items-center justify-center"
+                                             >
+                                                 <Users className="w-10 h-10 text-white" />
+                                             </motion.div>
+                                             
+                                             {/* Routing Nodes */}
+                                             <div className="flex gap-4 items-center">
+                                                 {[1, 2, 3].map((node) => (
+                                                     <div key={node} className="flex flex-col items-center gap-2">
+                                                         <motion.div 
+                                                            initial={{ opacity: 0.3 }}
+                                                            animate={{ opacity: [0.3, 1, 0.3] }}
+                                                            transition={{ duration: 2, repeat: Infinity, delay: node * 0.4 }}
+                                                            className={`w-12 h-12 rounded-full border border-white/10 flex items-center justify-center ${node === 2 ? 'bg-brand/20 border-brand/50 shadow-[0_0_15px_rgba(139,92,246,0.3)]' : 'bg-surface'}`}
+                                                         >
+                                                             <span className="text-xs font-bold text-white">G{node}</span>
+                                                         </motion.div>
+                                                     </div>
+                                                 ))}
+                                             </div>
+                                             
+                                             {/* Connecting dashed line */}
+                                             <div className="absolute top-[6.5rem] mt-1 w-full flex justify-center -z-10">
+                                                 <div className="w-32 h-[1px] border-b-2 border-dashed border-white/20" />
+                                             </div>
+                                         </div>
+                                         
+                                         {/* Status Badge */}
+                                         <div className="absolute bottom-4 right-4 bg-surface/80 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                                            <span className="text-[10px] font-bold text-white uppercase tracking-wider">Roteamento Ativo</span>
+                                         </div>
+                                    </div>
                                 </div>
                             </div>
                         </motion.div>
@@ -395,7 +439,8 @@ export default function LandingPage() {
                                     </ul>
                                 </div>
                                 <div className="mt-auto pt-8">
-                                    <Link href="/login" className="w-full block text-center py-4 rounded-xl bg-surface hover:bg-surface-hover border border-border text-white font-bold transition-colors">Assinar Starter</Link>
+                                    {/* TO DO: Add the specific Stripe link provided by the user */}
+                                    <a href={`/login?plan=${isAnnual ? 'prod_U7OpxQO04JnezC_annual' : 'prod_U7OpxQO04JnezC'}`} className="w-full block text-center py-4 rounded-xl bg-surface hover:bg-surface-hover border border-border text-white font-bold transition-colors">Assinar Starter</a>
                                 </div>
                             </motion.div>
 
@@ -433,9 +478,10 @@ export default function LandingPage() {
                                     </ul>
                                 </div>
                                 <div className="mt-auto pt-8">
-                                     <Link href="/login" className="w-full block text-center py-4 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white font-bold transition-all shadow-shadow-glow hover:shadow-[0_0_40px_rgba(139,92,246,0.5)] scale-100 hover:scale-[1.02] active:scale-[0.98]">
+                                     {/* TO DO: Add the specific Stripe link provided by the user */}
+                                     <a href={`/login?plan=${isAnnual ? 'prod_U7Osbf3PssasB3_annual' : 'prod_U7Osbf3PssasB3'}`} className="w-full block text-center py-4 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white font-bold transition-all shadow-shadow-glow hover:shadow-[0_0_40px_rgba(139,92,246,0.5)] scale-100 hover:scale-[1.02] active:scale-[0.98]">
                                         Assinar Pro
-                                    </Link>
+                                    </a>
                                 </div>
                             </motion.div>
 
@@ -469,7 +515,8 @@ export default function LandingPage() {
                                     </ul>
                                 </div>
                                 <div className="mt-auto pt-8">
-                                    <Link href="/login" className="w-full block text-center py-4 rounded-xl bg-surface hover:bg-surface-hover border border-border text-white font-bold transition-colors">Falar com o Time</Link>
+                                    {/* TO DO: Add the specific WhatsApp or External link for Master */}
+                                    <a href={`/login?plan=${isAnnual ? 'prod_U7OvV199EEpDuU_annual' : 'prod_U7OvV199EEpDuU'}`} className="w-full block text-center py-4 rounded-xl bg-surface hover:bg-surface-hover border border-border text-white font-bold transition-colors">Falar com o Time</a>
                                 </div>
                             </motion.div>
                         </div>
