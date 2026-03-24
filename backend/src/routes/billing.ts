@@ -129,11 +129,9 @@ export default async function billingRoutes(server: FastifyInstance) {
                     if (!organizationId && email) {
                         server.log.info(`[STRIPE] New user checkout detected for ${email}. Provisioning...`);
                         
-                        // 1. Create/Invite User in Supabase Auth
-                        const { data: authData, error: authError } = await supabase.auth.admin.createUser({
-                            email: email,
-                            email_confirm: true,
-                            user_metadata: { source: 'stripe_checkout' }
+                        // 1. Create/Invite User in Supabase Auth (This automatically sends the Invite email via Resend)
+                        const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(email, {
+                            data: { source: 'stripe_checkout' }
                         });
 
                         if (authError && authError.message !== 'User already registered') {
