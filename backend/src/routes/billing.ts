@@ -130,8 +130,10 @@ export default async function billingRoutes(server: FastifyInstance) {
                         server.log.info(`[STRIPE] New user checkout detected for ${email}. Provisioning...`);
                         
                         // 1. Try to invite the user (sends email via Resend automatically)
+                        const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
                         const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(email, {
-                            data: { source: 'stripe_checkout' }
+                            data: { source: 'stripe_checkout' },
+                            redirectTo: `${FRONTEND_URL}/auth/confirm?next=/dashboard`
                         });
 
                         if (authError) {
