@@ -109,31 +109,111 @@ export default function LandingPage() {
                                      <div className="ml-8 w-48 h-8 rounded-lg bg-white/5" />
                                 </div>
 
-                                {/* Mock Stats */}
-                                <div className="absolute top-24 left-6 right-6 flex gap-6 opacity-80">
-                                    <div className="flex-1 h-32 rounded-2xl glass border border-orange-500/30 shadow-[0_0_20px_rgba(249,115,22,0.15)] p-6 flex flex-col justify-between relative overflow-hidden">
-                                        <div className="absolute right-0 top-0 w-32 h-32 bg-orange-500/10 blur-3xl" />
-                                        <div className="flex items-center justify-between relative z-10"><div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center"><ShieldAlert className="w-4 h-4 text-orange-400" /></div><div className="text-xs text-orange-400 font-bold">ATIVA</div></div>
-                                        <div className="relative z-10"><div className="text-2xl font-black text-white">4.290</div><div className="text-xs text-foreground-muted font-semibold mt-1">Spammers Banidos pela IA</div></div>
+                                {/* Interactive Motion Content */}
+                                <div className="absolute top-24 left-6 right-6 bottom-6 flex gap-6">
+                                    
+                                    {/* Sidebar */}
+                                    <div className="w-48 bg-white/5 border border-white/5 rounded-2xl p-4 flex flex-col gap-4">
+                                        <div className="w-full h-8 bg-white/10 rounded-lg" />
+                                        <div className="w-3/4 h-8 bg-brand/20 border border-brand/30 rounded-lg relative overflow-hidden">
+                                            <motion.div 
+                                                animate={{ opacity: [0.5, 1, 0.5] }} 
+                                                transition={{ duration: 2, repeat: Infinity }}
+                                                className="absolute left-2 top-2 h-4 w-1 bg-brand rounded-full" 
+                                            />
+                                        </div>
+                                        <div className="w-full h-8 bg-white/5 rounded-lg" />
+                                        <div className="w-2/3 h-8 bg-white/5 rounded-lg" />
                                     </div>
-                                    <div className="flex-1 h-32 rounded-2xl bg-gradient-to-br from-white/5 to-transparent border border-white/5 p-6 flex flex-col justify-between">
-                                        <div className="flex items-center justify-between"><div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center"><Users className="w-4 h-4 text-green-400" /></div><div className="text-xs text-green-400 font-bold">+12%</div></div>
-                                        <div><div className="text-2xl font-black text-white">45.290</div><div className="text-xs text-foreground-muted font-semibold mt-1">Leads Ativos nos Grupos</div></div>
+
+                                    {/* Main Campaign Area */}
+                                    <div className="flex-1 bg-gradient-to-br from-white/5 to-transparent border border-white/5 rounded-2xl p-6 relative overflow-hidden">
+                                        <div className="flex justify-between items-center mb-8">
+                                            <div>
+                                                <div className="w-40 h-6 bg-white/20 rounded-md mb-2" />
+                                                <div className="w-64 h-4 bg-white/10 rounded-md" />
+                                            </div>
+                                            <motion.div 
+                                                animate={{ scale: [1, 0.95, 1], backgroundColor: ['rgba(139,92,246,0.2)', 'rgba(139,92,246,0.8)', 'rgba(139,92,246,0.2)'] }}
+                                                transition={{ duration: 6, times: [0, 0.4, 1], repeat: Infinity }}
+                                                className="w-32 h-10 rounded-xl border border-brand/50 flex items-center justify-center shadow-[0_0_15px_rgba(139,92,246,0.3)]"
+                                            >
+                                                <div className="w-16 h-2 bg-white rounded-full" />
+                                            </motion.div>
+                                        </div>
+
+                                        {/* Campaign Creation Steps Animation */}
+                                        <div className="space-y-4">
+                                            <div className="w-full h-16 bg-white/5 rounded-xl border border-white/10 p-4 flex items-center justify-between">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-8 h-8 rounded-full bg-brand/20 flex flex-center items-center justify-center">1</div>
+                                                    <div className="w-32 h-4 bg-white/20 rounded-md" />
+                                                </div>
+                                                <div className="w-16 h-8 bg-brand/30 rounded-lg border border-brand/50" />
+                                            </div>
+
+                                            {/* Typing Simulation Area */}
+                                            <div className="w-full h-32 bg-background/50 rounded-xl border border-white/10 p-4 relative">
+                                                <div className="flex items-center gap-2 mb-4">
+                                                    <div className="w-4 h-4 rounded-full bg-green-500/50" />
+                                                    <div className="w-24 h-3 bg-white/20 rounded-md" />
+                                                </div>
+                                                
+                                                <div className="flex flex-col gap-3 ml-6 pt-2">
+                                                    <motion.div 
+                                                        initial={{ width: 0 }}
+                                                        animate={{ width: "80%" }}
+                                                        transition={{ duration: 2, repeat: Infinity, repeatDelay: 4 }}
+                                                        className="h-3 bg-white/30 rounded-md"
+                                                    />
+                                                    <motion.div 
+                                                        initial={{ width: 0 }}
+                                                        animate={{ width: "60%" }}
+                                                        transition={{ duration: 1.5, delay: 0.5, repeat: Infinity, repeatDelay: 4.5 }}
+                                                        className="h-3 bg-white/20 rounded-md"
+                                                    />
+                                                    <motion.div 
+                                                        initial={{ width: 0 }}
+                                                        animate={{ width: "40%" }}
+                                                        transition={{ duration: 1, delay: 1, repeat: Infinity, repeatDelay: 5 }}
+                                                        className="h-3 bg-white/10 rounded-md"
+                                                    />
+                                                </div>
+
+                                                {/* Simulated Cursor */}
+                                                <motion.div 
+                                                    animate={{ x: [0, 150, 350, 450, 0], y: [0, -20, 50, -50, 0], opacity: [0, 1, 1, 1, 0] }}
+                                                    transition={{ duration: 6, ease: "easeInOut", repeat: Infinity }}
+                                                    className="absolute w-4 h-4 top-1/2 left-1/4 z-10"
+                                                >
+                                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-white drop-shadow-md transform -rotate-12"><polygon points="3 3 10 21 14 14 21 10 3 3"></polygon></svg>
+                                                </motion.div>
+                                            </div>
+
+                                            <div className="w-full h-16 bg-white/5 rounded-xl border border-white/10 p-4 flex items-center justify-between opacity-50">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="w-8 h-8 rounded-full bg-white/10" />
+                                                    <div className="w-48 h-4 bg-white/10 rounded-md" />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Progress Bar overlay mimicking "Sending Mass Messages" */}
+                                        <motion.div 
+                                            animate={{ opacity: [0, 0, 1, 0] }}
+                                            transition={{ duration: 6, times: [0, 0.6, 0.7, 1], repeat: Infinity }}
+                                            className="absolute inset-0 bg-surface/90 backdrop-blur-sm flex flex-col items-center justify-center gap-4 border border-brand/30 rounded-2xl"
+                                        >
+                                            <div className="text-lg font-bold text-white mb-2">Disparando para 45.290 Leads...</div>
+                                            <div className="w-64 h-3 bg-white/10 rounded-full overflow-hidden">
+                                                <motion.div 
+                                                    animate={{ width: ['0%', '100%'] }}
+                                                    transition={{ duration: 1.5, delay: 4.2, repeat: Infinity, repeatDelay: 4.5 }}
+                                                    className="h-full bg-gradient-to-r from-brand to-indigo-400"
+                                                />
+                                            </div>
+                                        </motion.div>
                                     </div>
-                                    <div className="flex-1 h-32 rounded-2xl bg-gradient-to-br from-white/5 to-transparent border border-white/5 p-6 flex flex-col justify-between">
-                                        <div className="flex items-center justify-between"><div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center"><MessageSquareShare className="w-4 h-4 text-indigo-400" /></div></div>
-                                        <div><div className="text-2xl font-black text-white">1.1M</div><div className="text-xs text-foreground-muted font-semibold mt-1">Mensagens Entregues</div></div>
-                                    </div>
-                                </div>
-                                
-                                {/* Mock Chart Area */}
-                                <div className="absolute top-64 left-6 right-6 h-64 rounded-2xl glass border border-white/5 opacity-80 flex flex-col gap-4 p-6 relative overflow-hidden">
-                                     <div className="w-48 h-6 bg-white/10 rounded-md mb-4" />
-                                     <div className="flex-1 w-full flex items-end justify-between gap-2 px-4">
-                                         {[40, 70, 45, 90, 65, 80, 55, 100, 75, 85, 60, 95].map((h, i) => (
-                                             <div key={i} className={`w-full rounded-t-md opacity-70 ${i === 7 ? 'bg-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.6)]' : 'bg-white/10'}`} style={{ height: `${h}%` }} />
-                                         ))}
-                                     </div>
                                 </div>
                             </div>
                         </div>
@@ -346,7 +426,7 @@ export default function LandingPage() {
                         className="w-full max-w-7xl mx-auto"
                     >
                         <div className="text-center mb-24">
-                            <h2 className="text-4xl md:text-5xl font-black text-white mb-6 tracking-tight">Escale seu negócio com <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand to-indigo-400">Tecnologia Militar.</span></h2>
+                            <h2 className="text-4xl md:text-5xl font-black text-white mb-6 tracking-tight">Escale seu negócio com <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand to-indigo-400">Disparos em Grupos.</span></h2>
                         </div>
 
                         <div className="grid md:grid-cols-3 gap-6">
@@ -513,7 +593,7 @@ export default function LandingPage() {
                                     </ul>
                                 </div>
                                 <div className="mt-auto pt-8">
-                                    <a href={`/checkout?price_id=${isAnnual ? process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_YEARLY_PRICE_ID || 'master_yearly' : process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_PRICE_ID || 'master_monthly'}`} className="w-full block text-center py-4 rounded-xl bg-surface hover:bg-surface-hover border border-border text-white font-bold transition-colors">Falar com o Time</a>
+                                    <a href={`/checkout?price_id=${isAnnual ? process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_YEARLY_PRICE_ID || 'master_yearly' : process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_PRICE_ID || 'master_monthly'}`} className="w-full block text-center py-4 rounded-xl bg-surface hover:bg-surface-hover border border-border text-white font-bold transition-colors">Assinar Master</a>
                                 </div>
                             </motion.div>
                         </div>
