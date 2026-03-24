@@ -129,28 +129,41 @@ export default async function billingRoutes(server: FastifyInstance) {
                     if (!organizationId && email) {
                         server.log.info(`[STRIPE] New user checkout detected for ${email}. Provisioning...`);
                         
-                        // 1. Create/Invite User in Supabase Auth (This automatically sends the Invite email via Resend)
+                        // 1. Try to invite the user (sends email via Resend automatically)
                         const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(email, {
                             data: { source: 'stripe_checkout' }
                         });
 
-                        if (authError && authError.message !== 'User already registered') {
-                            server.log.error(`[STRIPE] Failed to create user: ${authError.message}`);
-                        } else {
-                            const userId = authData?.user?.id || (await supabase.from('users').select('id').eq('email', email).single()).data?.id;
-                            
-                            if (userId) {
-                                // 2. Wait a moment or explicitly fetch the organization (created via DB Triggers)
-                                // We assume handle_new_user() trigger created the org and users_organizations mapping.
-                                const { data: orgData } = await supabase
-                                    .from('users_organizations')
-                                    .select('organization_id')
-                                    .eq('user_id', userId)
-                                    .maybeSingle();
-                                
-                                organizationId = orgData?.organization_id;
-                                server.log.info(`[STRIPE] User ${userId} provisioned with Org ${organizationId}`);
+                        if (authError) {
+                            if (authError.message.includes('already been registered') || authError.message.includes('already registered')) {
+                                // User already exists — send a magic link so they can access immediately
+                                server.log.info(`[STRIPE] User ${email} already exists. Sending magic link...`);
+                                await supabase.auth.admin.generateLink({
+                                    type: 'magiclink',
+                                    email: email,
+                                });
+                                // Supabase sends the magic link email automatically via SMTP/Resend
+                            } else {
+                                server.log.error(`[STRIPE] Failed to create user: ${authError.message}`);
                             }
+                        }
+
+                        // Get user ID (either newly created or existing)
+                        const userId = authData?.user?.id || 
+                            (await supabase.from('users').select('id').eq('email', email).single()).data?.id;
+                        
+                        if (userId) {
+                            // Wait for DB trigger to create the org (handle_new_user)
+                            await new Promise(resolve => setTimeout(resolve, 1500));
+                            
+                            const { data: orgData } = await supabase
+                                .from('users_organizations')
+                                .select('organization_id')
+                                .eq('user_id', userId)
+                                .maybeSingle();
+                            
+                            organizationId = orgData?.organization_id;
+                            server.log.info(`[STRIPE] User ${userId} provisioned with Org ${organizationId}`);
                         }
                     }
 
