@@ -439,8 +439,7 @@ export default function LandingPage() {
                                     </ul>
                                 </div>
                                 <div className="mt-auto pt-8">
-                                    {/* TO DO: Add the specific Stripe link provided by the user */}
-                                    <a href={`/login?plan=${isAnnual ? 'prod_U7OpxQO04JnezC_annual' : 'prod_U7OpxQO04JnezC'}`} className="w-full block text-center py-4 rounded-xl bg-surface hover:bg-surface-hover border border-border text-white font-bold transition-colors">Assinar Starter</a>
+                                    <a href={`/login?price_id=${isAnnual ? process.env.NEXT_PUBLIC_STRIPE_STARTER_YEARLY_PRICE_ID || 'starter_yearly' : process.env.NEXT_PUBLIC_STRIPE_STARTER_PRICE_ID || 'starter_monthly'}`} className="w-full block text-center py-4 rounded-xl bg-surface hover:bg-surface-hover border border-border text-white font-bold transition-colors">Assinar Starter</a>
                                 </div>
                             </motion.div>
 
@@ -478,8 +477,7 @@ export default function LandingPage() {
                                     </ul>
                                 </div>
                                 <div className="mt-auto pt-8">
-                                     {/* TO DO: Add the specific Stripe link provided by the user */}
-                                     <a href={`/login?plan=${isAnnual ? 'prod_U7Osbf3PssasB3_annual' : 'prod_U7Osbf3PssasB3'}`} className="w-full block text-center py-4 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white font-bold transition-all shadow-shadow-glow hover:shadow-[0_0_40px_rgba(139,92,246,0.5)] scale-100 hover:scale-[1.02] active:scale-[0.98]">
+                                     <a href={`/login?price_id=${isAnnual ? process.env.NEXT_PUBLIC_STRIPE_PRO_YEARLY_PRICE_ID || 'pro_yearly' : process.env.NEXT_PUBLIC_STRIPE_PRO_PRICE_ID || 'pro_monthly'}`} className="w-full block text-center py-4 rounded-xl bg-gradient-to-r from-brand to-brand-hover text-white font-bold transition-all shadow-shadow-glow hover:shadow-[0_0_40px_rgba(139,92,246,0.5)] scale-100 hover:scale-[1.02] active:scale-[0.98]">
                                         Assinar Pro
                                     </a>
                                 </div>
@@ -515,8 +513,7 @@ export default function LandingPage() {
                                     </ul>
                                 </div>
                                 <div className="mt-auto pt-8">
-                                    {/* TO DO: Add the specific WhatsApp or External link for Master */}
-                                    <a href={`/login?plan=${isAnnual ? 'prod_U7OvV199EEpDuU_annual' : 'prod_U7OvV199EEpDuU'}`} className="w-full block text-center py-4 rounded-xl bg-surface hover:bg-surface-hover border border-border text-white font-bold transition-colors">Falar com o Time</a>
+                                    <a href={`/login?price_id=${isAnnual ? process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_YEARLY_PRICE_ID || 'master_yearly' : process.env.NEXT_PUBLIC_STRIPE_ENTERPRISE_PRICE_ID || 'master_monthly'}`} className="w-full block text-center py-4 rounded-xl bg-surface hover:bg-surface-hover border border-border text-white font-bold transition-colors">Falar com o Time</a>
                                 </div>
                             </motion.div>
                         </div>
