@@ -18,41 +18,49 @@ export default function AuthConfirmPage() {
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
         );
 
-        // Parse the hash fragment from the URL to extract auth tokens
-        const hash = window.location.hash.substring(1); // Remove leading #
-        if (!hash) {
-            // No hash, check if there's an error in query params
-            const error = searchParams.get('error');
-            if (error) {
-                router.replace(`/login?error=${error}`);
-            } else {
-                router.replace('/dashboard');
-            }
-            return;
-        }
+        const handleAuth = async () => {
+            // ── PKCE Flow: token_hash in query params ──────────────
+            const token_hash = searchParams.get('token_hash');
+            const type = searchParams.get('type') as any;
 
-        const params = new URLSearchParams(hash);
-        const access_token = params.get('access_token');
-        const refresh_token = params.get('refresh_token');
-        const type = params.get('type');
-
-        if (access_token && refresh_token) {
-            supabase.auth.setSession({ access_token, refresh_token }).then(({ error }) => {
-                if (error) {
-                    console.error('Failed to set session:', error);
-                    router.replace('/login?error=link_expired');
+            if (token_hash && type) {
+                const { error } = await supabase.auth.verifyOtp({ type, token_hash });
+                if (!error) {
+                    router.replace(next);
                 } else {
-                    // If this is an invite, the user needs to set their password
-                    if (type === 'invite') {
-                        router.replace('/signup/set-password');
-                    } else {
-                        router.replace(next);
-                    }
+                    router.replace('/login?error=link_expired');
                 }
-            });
-        } else {
-            router.replace('/login?error=link_expired');
-        }
+                return;
+            }
+
+            // ── Implicit Flow: access_token in URL hash fragment ───
+            const hash = window.location.hash.substring(1);
+            if (!hash) {
+                const error = searchParams.get('error');
+                router.replace(error ? `/login?error=${error}` : '/dashboard');
+                return;
+            }
+
+            const params = new URLSearchParams(hash);
+            const access_token = params.get('access_token');
+            const refresh_token = params.get('refresh_token');
+            const inviteType = params.get('type');
+
+            if (access_token && refresh_token) {
+                const { error } = await supabase.auth.setSession({ access_token, refresh_token });
+                if (error) {
+                    router.replace('/login?error=link_expired');
+                } else if (inviteType === 'invite') {
+                    router.replace('/signup/set-password');
+                } else {
+                    router.replace(next);
+                }
+            } else {
+                router.replace('/login?error=link_expired');
+            }
+        };
+
+        handleAuth();
     }, [router, next, searchParams]);
 
     return (
