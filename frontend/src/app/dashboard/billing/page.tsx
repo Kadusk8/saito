@@ -225,7 +225,7 @@ export default function BillingPage() {
                                 <p className="text-xs font-medium text-neutral-400 h-10">Para produtores validando seus primeiros lançamentos.</p>
                                 <div className="mt-6 flex items-baseline gap-1">
                                     <span className="text-4xl font-black text-white tracking-tight">
-                                        {billingCycle === 'monthly' ? 'R$147' : 'R$1.176'}
+                                        {billingCycle === 'monthly' ? 'R$197' : 'R$1.576'}
                                     </span>
                                     <span className="text-xs font-bold text-neutral-500 uppercase tracking-widest">/{billingCycle === 'monthly' ? 'mês' : 'ano'}</span>
                                 </div>
@@ -269,7 +269,7 @@ export default function BillingPage() {
                                 <p className="text-xs font-medium text-neutral-400 h-10">Para múltiplos experts e lançamentos escaláveis.</p>
                                 <div className="mt-6 flex items-baseline gap-1">
                                     <span className="text-5xl font-black text-white tracking-tight">
-                                        {billingCycle === 'monthly' ? 'R$347' : 'R$2.776'}
+                                        {billingCycle === 'monthly' ? 'R$497' : 'R$3.976'}
                                     </span>
                                     <span className="text-xs font-bold text-neutral-500 uppercase tracking-widest">/{billingCycle === 'monthly' ? 'mês' : 'ano'}</span>
                                 </div>
