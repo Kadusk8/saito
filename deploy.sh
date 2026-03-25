@@ -45,7 +45,11 @@ set -a; source stack.env; set +a
 
 # 4. Build apenas do target
 echo "🔨 Fazendo build..."
-docker compose build --no-cache $TARGET
+if [ "$TARGET" == "all" ]; then
+  docker compose build --no-cache frontend backend
+else
+  docker compose build --no-cache $TARGET
+fi
 
 # 5. Reinicia o(s) container(s)
 echo "♻️  Reiniciando containers..."
