@@ -138,11 +138,10 @@ export default async function billingRoutes(server: FastifyInstance) {
 
                         if (authError) {
                             if (authError.message.includes('already been registered') || authError.message.includes('already registered')) {
-                                // User already exists — send a magic link so they can access immediately
-                                server.log.info(`[STRIPE] User ${email} already exists. Sending magic link...`);
-                                await supabase.auth.admin.generateLink({
-                                    type: 'magiclink',
-                                    email: email,
+                                // User already exists — send a password reset email so they can access
+                                server.log.info(`[STRIPE] User ${email} already exists. Sending password reset email...`);
+                                await supabase.auth.resetPasswordForEmail(email, {
+                                    redirectTo: `${FRONTEND_URL}/auth/confirm?next=/signup/set-password`
                                 });
                                 // Supabase sends the magic link email automatically via SMTP/Resend
                             } else {

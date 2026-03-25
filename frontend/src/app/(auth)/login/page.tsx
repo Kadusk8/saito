@@ -11,7 +11,9 @@ export default function LoginPage() {
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [success, setSuccess] = useState<string | null>(null);
     const [isSignUp, setIsSignUp] = useState(false);
+    const [isForgot, setIsForgot] = useState(false);
 
     const router = useRouter();
 
@@ -24,15 +26,25 @@ export default function LoginPage() {
         e.preventDefault();
         setLoading(true);
         setError(null);
+        setSuccess(null);
 
         try {
+            if (isForgot) {
+                const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                    redirectTo: `${window.location.origin}/auth/confirm?next=/signup/set-password`
+                });
+                if (error) throw error;
+                setSuccess('Email enviado! Verifique sua caixa de entrada para redefinir a senha.');
+                return;
+            }
+
             if (isSignUp) {
                 const { error: signUpError } = await supabase.auth.signUp({
                     email,
                     password,
                 });
                 if (signUpError) throw signUpError;
-                setError('Cadastro realizado! Verifique seu email ou tente fazer login.');
+                setSuccess('Cadastro realizado! Verifique seu email para confirmar a conta.');
                 setIsSignUp(false);
             } else {
                 const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -77,10 +89,10 @@ export default function LoginPage() {
                             <ShieldAlert className="w-8 h-8 text-white" />
                         </motion.div>
                         <h1 className="text-3xl font-extrabold text-white tracking-tight mb-2">
-                            {isSignUp ? 'Criar Conta' : 'Acessar Saito'}
+                            {isForgot ? 'Recuperar Senha' : isSignUp ? 'Criar Conta' : 'Acessar Saito'}
                         </h1>
                         <p className="text-foreground-muted text-sm text-center">
-                            Governança avançada e IA para grupos de WhatsApp
+                            {isForgot ? 'Enviaremos um link para redefinir sua senha' : 'Governança avançada e IA para grupos de WhatsApp'}
                         </p>
                     </div>
 
@@ -93,6 +105,16 @@ export default function LoginPage() {
                                 className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm text-center font-medium"
                             >
                                 {error}
+                            </motion.div>
+                        )}
+                        {success && (
+                            <motion.div 
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="mb-6 p-4 bg-green-500/10 border border-green-500/20 rounded-xl text-green-400 text-sm text-center font-medium"
+                            >
+                                {success}
                             </motion.div>
                         )}
                     </AnimatePresence>
@@ -112,26 +134,35 @@ export default function LoginPage() {
                             />
                         </div>
 
+                        {!isForgot && (
                         <div className="space-y-2 group">
-                            <label className="block text-[11px] font-bold text-foreground-muted uppercase tracking-widest group-focus-within:text-brand transition-colors">
-                                Senha
-                            </label>
+                            <div className="flex justify-between items-center">
+                                <label className="block text-[11px] font-bold text-foreground-muted uppercase tracking-widest group-focus-within:text-brand transition-colors">
+                                    Senha
+                                </label>
+                                {!isSignUp && (
+                                    <button type="button" onClick={() => { setIsForgot(true); setError(null); setSuccess(null); }} className="text-[11px] text-brand hover:text-brand-hover transition-colors font-semibold">
+                                        Esqueceu a senha?
+                                    </button>
+                                )}
+                            </div>
                             <input
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                required
+                                required={!isForgot}
                                 className="w-full bg-black/20 border border-white/10 rounded-xl px-4 py-3.5 text-white placeholder-neutral-600 focus:outline-none focus:ring-2 focus:ring-brand/40 focus:border-brand/50 transition-all shadow-[inset_0_2px_4px_rgba(0,0,0,0.2)]"
                                 placeholder="••••••••"
                                 minLength={6}
                             />
                         </div>
+                        )}
 
                         <motion.button
                             whileHover={{ scale: 1.01 }}
                             whileTap={{ scale: 0.98 }}
                             type="submit"
-                            disabled={loading || !email || !password}
+                            disabled={loading || !email || (!isForgot && !password)}
                             className="group relative w-full h-14 bg-gradient-to-r from-brand to-brand-hover disabled:from-surface disabled:to-surface disabled:border-border disabled:text-neutral-500 border border-transparent text-white font-bold tracking-wide rounded-xl shadow-[0_0_30px_rgba(139,92,246,0.3)] hover:shadow-[0_0_40px_rgba(139,92,246,0.5)] transition-all overflow-hidden flex items-center justify-center gap-2 mt-8"
                         >
                             {!loading && <div className="absolute inset-0 -translate-x-full group-hover:animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-12" />}
@@ -139,26 +170,27 @@ export default function LoginPage() {
                                 <Loader2 className="w-5 h-5 animate-spin" />
                             ) : (
                                 <>
-                                    <span>{isSignUp ? 'Criar Conta' : 'Entrar na Plataforma'}</span>
+                                    <span>{isForgot ? 'Enviar Link de Recuperação' : isSignUp ? 'Criar Conta' : 'Entrar na Plataforma'}</span>
                                     <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                                 </>
                             )}
                         </motion.button>
                     </form>
 
-                    <div className="mt-8 text-center border-t border-border-subtle/50 pt-6">
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setIsSignUp(!isSignUp);
-                                setError(null);
-                            }}
-                            className="text-sm text-foreground-muted hover:text-white transition-colors font-medium"
-                        >
-                            {isSignUp
-                                ? 'Já tem uma conta? Faça login'
-                                : 'Ainda não tem conta? Cadastre-se'}
-                        </button>
+                    <div className="mt-8 text-center border-t border-border-subtle/50 pt-6 flex flex-col gap-3">
+                        {isForgot ? (
+                            <button type="button" onClick={() => { setIsForgot(false); setError(null); setSuccess(null); }} className="text-sm text-foreground-muted hover:text-white transition-colors font-medium">
+                                ← Voltar para o login
+                            </button>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => { setIsSignUp(!isSignUp); setError(null); setSuccess(null); }}
+                                className="text-sm text-foreground-muted hover:text-white transition-colors font-medium"
+                            >
+                                {isSignUp ? 'Já tem uma conta? Faça login' : 'Ainda não tem conta? Cadastre-se'}
+                            </button>
+                        )}
                     </div>
                 </div>
             </motion.div>
