@@ -1,13 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
 
-// This page handles the hash-based Supabase auth callback (invite, magic link)
-// The /auth/confirm/route.ts handles the PKCE flow (token_hash in query params)
-// This page handles the implicit flow (access_token in the URL hash fragment)
-export default function AuthConfirmPage() {
+function AuthConfirmInner() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const next = searchParams.get('next') || '/dashboard';
@@ -50,7 +47,7 @@ export default function AuthConfirmPage() {
                 const { error } = await supabase.auth.setSession({ access_token, refresh_token });
                 if (error) {
                     router.replace('/login?error=link_expired');
-                } else if (inviteType === 'invite') {
+                } else if (inviteType === 'invite' || inviteType === 'recovery') {
                     router.replace('/signup/set-password');
                 } else {
                     router.replace(next);
@@ -70,5 +67,17 @@ export default function AuthConfirmPage() {
                 <p className="text-foreground-muted">Verificando seu acesso...</p>
             </div>
         </div>
+    );
+}
+
+export default function AuthConfirmPage() {
+    return (
+        <Suspense fallback={
+            <div className="min-h-screen flex items-center justify-center bg-background">
+                <div className="w-12 h-12 border-4 border-brand border-t-transparent rounded-full animate-spin mx-auto"></div>
+            </div>
+        }>
+            <AuthConfirmInner />
+        </Suspense>
     );
 }
