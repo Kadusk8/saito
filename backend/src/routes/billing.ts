@@ -107,6 +107,8 @@ export default async function billingRoutes(server: FastifyInstance) {
         const sig = req.headers['stripe-signature'];
         const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
+        server.log.info(`[STRIPE-WEBHOOK] sig present: ${!!sig}, secret present: ${!!endpointSecret}, secret prefix: ${endpointSecret?.substring(0, 10)}`);
+
         if (!sig || !endpointSecret) {
             return reply.code(400).send({ error: 'Missing stripe signature or webhook secret' });
         }
