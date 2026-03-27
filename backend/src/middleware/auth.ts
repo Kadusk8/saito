@@ -1,17 +1,27 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
-import { supabase } from '../db';
+import { supabase, redisConnection as redis } from '../db';
+
+export interface UserSubscription {
+    status: string;
+    price_id: string;
+    current_period_end: string;
+}
+
+export interface AuthUser {
+    id: string;
+    email?: string | undefined;
+    organization_id?: string | undefined;
+    subscription?: UserSubscription | null | undefined;
+}
 
 export interface AuthenticatedRequest extends FastifyRequest {
-    user?: {
-        id: string;
-        email?: string;
-        organization_id?: string;
-        subscription?: {
-            status: string;
-            price_id: string;
-            current_period_end: string;
-        } | null;
-    };
+    user?: AuthUser;
+}
+
+const AUTH_CACHE_TTL_SECONDS = 120;
+
+function authCacheKey(userId: string): string {
+    return `auth_context:${userId}`;
 }
 
 export async function authenticate(request: AuthenticatedRequest, reply: FastifyReply) {
@@ -24,8 +34,7 @@ export async function authenticate(request: AuthenticatedRequest, reply: Fastify
 
         const token = authHeader.split(' ')[1];
 
-        // Verify token with Supabase Auth
-        // Using getUser() is the most secure way as it validates with the Supabase auth server
+        // Valida o token com o servidor Supabase Auth (mais seguro que decodificar localmente)
         const { data: { user }, error } = await supabase.auth.getUser(token);
 
         if (error || !user) {
@@ -33,55 +42,64 @@ export async function authenticate(request: AuthenticatedRequest, reply: Fastify
             return reply.code(401).send({ error: 'Unauthorized: Invalid token' });
         }
 
-        console.log(`[AUTH] User: ${user.email} (${user.id})`);
-        
-        // Fetch User's Organization ID mapping
+        // Tenta carregar org_id + subscription do cache Redis para evitar 2 queries extras
+        const cacheKey = authCacheKey(user.id);
+        const cached = await redis.get(cacheKey);
+
+        if (cached) {
+            const { organization_id, subscription } = JSON.parse(cached);
+            request.user = { id: user.id, email: user.email, organization_id, subscription };
+            return;
+        }
+
+        // Cache miss — busca org_id no banco
         const { data: orgMapping, error: orgError } = await supabase
-            .from('users_organizations')
+            .from('user_roles')
             .select('organization_id')
             .eq('user_id', user.id)
             .limit(1)
             .single();
 
         if (orgError) {
-            console.error(`[AUTH] Org Mapping Error for user ${user.id}:`, orgError);
-        } else {
-            console.log(`[AUTH] Org ID Found: ${orgMapping?.organization_id}`);
+            request.log.warn({ userId: user.id, err: orgError }, 'Failed to fetch org mapping');
         }
 
-        // Fetch Subscription Status using RPC to bypass RLS
-        let subscriptionData = null;
+        // Busca status da assinatura via RPC (bypass RLS)
+        let subscriptionData: UserSubscription | null = null;
         if (orgMapping?.organization_id) {
-            console.log(`[AUTH] Fetching subscription for org: ${orgMapping.organization_id} via RPC`);
             const { data: subData, error: subError } = await supabase
                 .rpc('check_subscription_status', { org_id: orgMapping.organization_id })
                 .maybeSingle();
 
             if (subError) {
-                console.error(`[AUTH] Subscription RPC Error for org ${orgMapping.organization_id}:`, subError);
+                request.log.warn({ orgId: orgMapping.organization_id, err: subError }, 'Failed to fetch subscription');
             } else {
-                console.log(`[AUTH] Subscription Found via RPC:`, subData);
+                subscriptionData = subData as UserSubscription | null;
             }
-
-            subscriptionData = subData as any;
         }
+
+        const context = {
+            organization_id: orgMapping?.organization_id,
+            subscription: subscriptionData,
+        };
+
+        // Armazena no cache por 2 minutos
+        await redis.set(cacheKey, JSON.stringify(context), 'EX', AUTH_CACHE_TTL_SECONDS);
 
         request.user = {
             id: user.id,
-            email: user.email as any,
-            organization_id: orgMapping?.organization_id,
-            subscription: subscriptionData
+            email: user.email,
+            ...context,
         };
 
     } catch (err: any) {
-        request.log.error(`Authentication error: ${err.message}`);
+        request.log.error({ err }, 'Unexpected authentication error');
         return reply.code(401).send({ error: 'Unauthorized' });
     }
 }
 
-// Middleware to strictly enforce an active or trialing subscription
+// Middleware que exige assinatura ativa ou em trial
 export async function activeSubscriptionRequired(request: AuthenticatedRequest, reply: FastifyReply) {
-    // Rely on the base authentication first
     await authenticate(request, reply);
     if (reply.sent) return;
 
@@ -91,12 +109,10 @@ export async function activeSubscriptionRequired(request: AuthenticatedRequest, 
 
     const { status, current_period_end } = request.user.subscription;
 
-    // Allow 'active' and 'trialing' statuses
     if (status !== 'active' && status !== 'trialing') {
         return reply.code(402).send({ error: `Payment Required: Your subscription is currently ${status}.` });
     }
 
-    // Check expiration date explicitly just in case webhooks lagged
     if (new Date(current_period_end).getTime() < Date.now()) {
         return reply.code(402).send({ error: 'Payment Required: Your subscription period has ended.' });
     }

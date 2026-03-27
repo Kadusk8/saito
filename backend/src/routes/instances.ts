@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { EvolutionAPI } from '../services/evolution';
-import { activeSubscriptionRequired, AuthenticatedRequest } from '../middleware/auth';
+import { authenticate, activeSubscriptionRequired, AuthenticatedRequest } from '../middleware/auth';
 import { checkInstanceCreationLimit } from '../services/billing-limits';
 import { supabase } from '../db';
 
@@ -20,7 +20,6 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
                 return reply.code(403).send({ error: 'User does not belong to an organization' });
             }
 
-            // Verify Subscription Scopes / Limits
             try {
                 const { allowed, reason } = await checkInstanceCreationLimit(request.user.organization_id, request.user.subscription);
                 if (!allowed) {
@@ -32,14 +31,11 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
 
             server.log.info(`Creating Evolution instance: ${instanceName} for org ${request.user.organization_id}`);
 
-            // 1. Create the instance
             const createResponse = await evolution.createInstance(instanceName);
 
-            // 2. Set the Webhook automatically
             const webhookUrl = process.env.WEBHOOK_URL || 'http://host.docker.internal:3001/webhooks/evolution';
             await evolution.setWebhook(instanceName, webhookUrl);
 
-            // 3. Save the new instance reference to Supabase
             await supabase.from('instances').insert({
                 organization_id: request.user.organization_id,
                 name: instanceName,
@@ -54,7 +50,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
 
         } catch (error: any) {
             if (error instanceof z.ZodError) {
-                return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
             }
             server.log.error(error);
             return reply.code(500).send({ error: error.message || 'Failed to create instance' });
@@ -62,10 +58,10 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Route to get all Evolution instances (with DB fallback)
-    server.get('/api/instances', async (request, reply) => {
+    server.get('/api/instances', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         try {
             let evolutionInstances: any[] = [];
-            
+
             try {
                 evolutionInstances = await evolution.fetchInstances();
             } catch (error: any) {
@@ -74,19 +70,22 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
 
             const { data: dbInstances, error: dbError } = await supabase
                 .from('instances')
-                .select('*');
+                .select('*')
+                .eq('organization_id', request.user!.organization_id!);
 
             if (dbError) throw dbError;
 
-            // Merge Evolution instances with DB instances
+            const evoArray = Array.isArray(evolutionInstances)
+                ? evolutionInstances
+                : (evolutionInstances as any)?.data || [];
+
             const mergedInstances = (dbInstances || []).map(dbInst => {
-                const evoInstancesArray = Array.isArray(evolutionInstances) ? evolutionInstances : (evolutionInstances as any)?.data || [];
-                const evoInst = evoInstancesArray.find((i: any) => 
-                    i.name === dbInst.name || 
+                const evoInst = evoArray.find((i: any) =>
+                    i.name === dbInst.name ||
                     i.instance?.instanceName === dbInst.name ||
                     i.instanceName === dbInst.name
                 );
-                
+
                 return {
                     id: dbInst.id,
                     name: dbInst.name,
@@ -106,7 +105,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Route to list all Evolution groups for an instance (without syncing to DB)
-    server.get('/api/instances/:name/groups/sync-list', async (request, reply) => {
+    server.get('/api/instances/:name/groups/sync-list', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         try {
             const { name } = request.params as { name: string };
             const groups: any[] = await evolution.fetchAllGroups(name);
@@ -118,7 +117,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Route to create a new WhatsApp group
-    server.post('/api/instances/:name/groups/create', async (request, reply) => {
+    server.post('/api/instances/:name/groups/create', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         const createGroupSchema = z.object({
             subject: z.string().min(1),
             participants: z.array(z.string()).optional()
@@ -135,7 +134,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             return { success: true, group: result };
         } catch (error: any) {
             if (error instanceof z.ZodError) {
-                return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
             }
             server.log.error('Error creating group:', error.message);
             return reply.code(500).send({ error: error.message || 'Failed to create group' });
@@ -143,7 +142,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Route to send a text message to a WhatsApp group or number
-    server.post('/api/instances/:name/groups/:jid/message', async (request, reply) => {
+    server.post('/api/instances/:name/groups/:jid/message', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         const sendMessageSchema = z.object({
             text: z.string().min(1)
         });
@@ -151,15 +150,14 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
         try {
             const { name, jid } = request.params as { name: string; jid: string };
             const body = sendMessageSchema.parse(request.body);
-            const { text } = body;
 
             server.log.info(`Sending message to ${jid} via ${name}`);
-            const result = await evolution.sendGroupMessage(name, jid, text.trim());
+            const result = await evolution.sendGroupMessage(name, jid, body.text.trim());
 
             return { success: true, result };
         } catch (error: any) {
             if (error instanceof z.ZodError) {
-                return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
             }
             server.log.error('Error sending message:', error.message);
             return reply.code(500).send({ error: error.message || 'Failed to send message' });
@@ -167,7 +165,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Route to broadcast a message to MULTIPLE groups at once
-    server.post('/api/instances/:name/broadcast', async (request, reply) => {
+    server.post('/api/instances/:name/broadcast', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         const broadcastSchema = z.object({
             jids: z.array(z.string()).min(1),
             text: z.string().min(1),
@@ -179,25 +177,31 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             const body = broadcastSchema.parse(request.body);
             const { jids, text, delayMs } = body;
 
-            const delay = Math.min(delayMs || 1500, 5000);
+            const delay = Math.min(delayMs ?? 1500, 5000);
             const results: { jid: string; success: boolean; error?: string }[] = [];
 
-            for (const jid of jids) {
+            for (let i = 0; i < jids.length; i++) {
+                const jid = jids[i];
                 try {
                     await evolution.sendGroupMessage(name, jid, text.trim());
                     results.push({ jid, success: true });
                 } catch (e: any) {
                     results.push({ jid, success: false, error: e.message });
                 }
-                if (jid !== jids[jids.length - 1]) {
+                if (i < jids.length - 1) {
                     await new Promise(r => setTimeout(r, delay));
                 }
             }
 
-            return { success: true, results, sent: results.filter(r => r.success).length, failed: results.filter(r => !r.success).length };
+            return {
+                success: true,
+                results,
+                sent: results.filter(r => r.success).length,
+                failed: results.filter(r => !r.success).length
+            };
         } catch (error: any) {
             if (error instanceof z.ZodError) {
-                return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
             }
             server.log.error('Error broadcasting:', error.message);
             return reply.code(500).send({ error: error.message || 'Failed to broadcast' });
@@ -205,11 +209,9 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Route to fetch the instance QRCode connection state
-    server.get('/api/instances/:name/qrcode', async (request, reply) => {
+    server.get('/api/instances/:name/qrcode', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         try {
             const { name } = request.params as { name: string };
-            if (!name) return reply.code(400).send({ error: 'Instance name required' });
-
             const data = await evolution.getInstanceConnect(name);
             return data;
         } catch (error: any) {
@@ -219,7 +221,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Upload media, send message, then auto-delete from Supabase Storage
-    server.post('/api/instances/:name/send-media-upload', async (request, reply) => {
+    server.post('/api/instances/:name/send-media-upload', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         const mediaUploadSchema = z.object({
             type: z.enum(['image', 'video', 'document', 'audio']),
             number: z.string().min(1),
@@ -237,73 +239,70 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             const body = mediaUploadSchema.parse(request.body);
             const { type, number, mediaBase64, mediaName, mimeType, caption, fileName } = body;
 
-            const base64Data: string = mediaBase64.includes(',') ? mediaBase64.split(',')[1] || mediaBase64 : mediaBase64;
+            const base64Data = mediaBase64.includes(',') ? mediaBase64.split(',')[1] || mediaBase64 : mediaBase64;
             const buffer = Buffer.from(base64Data, 'base64');
             storagePath = `temp/${Date.now()}-${mediaName || 'file'}`;
 
-            const { data: uploadData, error: uploadError } = await supabase.storage
+            const { error: uploadError } = await supabase.storage
                 .from('saito-temp-media')
                 .upload(storagePath, buffer, { contentType: mimeType || 'application/octet-stream', upsert: true });
 
             if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
 
             const { data: urlData } = supabase.storage.from('saito-temp-media').getPublicUrl(storagePath);
-            const publicUrl = urlData.publicUrl;
 
-            server.log.info(`Uploaded media to ${publicUrl}, sending via Evolution API`);
+            server.log.info(`Uploaded media to ${urlData.publicUrl}, sending via Evolution API`);
 
             let result: any;
             if (type === 'audio') {
-                result = await evolution.sendWhatsAppAudio(name, number, publicUrl);
+                result = await evolution.sendWhatsAppAudio(name, number, urlData.publicUrl);
             } else {
-                result = await evolution.sendMedia(name, number, type as 'image' | 'video' | 'document', publicUrl, caption, fileName || mediaName);
+                result = await evolution.sendMedia(name, number, type, urlData.publicUrl, caption ?? '', (fileName || mediaName) ?? '');
             }
 
             await supabase.storage.from('saito-temp-media').remove([storagePath]);
-            server.log.info(`Deleted temp media ${storagePath} from storage`);
 
             return { success: true, result };
         } catch (error: any) {
             if (storagePath) {
-                await supabase.storage.from('saito-temp-media').remove([storagePath]).catch(() => { });
+                await supabase.storage.from('saito-temp-media').remove([storagePath]).catch(() => {});
             }
             if (error instanceof z.ZodError) {
-                return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
             }
             server.log.error('Error in send-media-upload:', error.message);
             return reply.code(500).send({ error: error.message || 'Failed to upload and send media' });
         }
     });
 
-    // Send media from an already-uploaded Supabase Storage URL, then auto-delete
-    server.post('/api/instances/:name/send-from-url', async (request, reply) => {
+    // Send media from an already-uploaded Supabase Storage URL
+    server.post('/api/instances/:name/send-from-url', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         const sendFromUrlSchema = z.object({
             type: z.enum(['image', 'video', 'document', 'audio']),
             number: z.string().min(1),
-            mediaUrl: z.string().url(),
+            mediaUrl: z.string().min(1),
             storagePath: z.string().optional(),
             caption: z.string().optional(),
             fileName: z.string().optional()
         });
 
         const { name } = request.params as { name: string };
-        let storagePath: string | undefined;
+
         try {
             const body = sendFromUrlSchema.parse(request.body);
             const { type, number, mediaUrl, caption, fileName } = body;
-            storagePath = body.storagePath;
 
             let result: any;
             if (type === 'audio') {
                 result = await evolution.sendWhatsAppAudio(name, number, mediaUrl);
             } else {
-                result = await evolution.sendMedia(name, number, type as 'image' | 'video' | 'document', mediaUrl, caption, fileName);
+                result = await evolution.sendMedia(name, number, type, mediaUrl, caption ?? '', fileName ?? '');
             }
 
             return { success: true, result };
         } catch (error: any) {
             if (error instanceof z.ZodError) {
-                return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
             }
             server.log.error('Error in send-from-url:', error.message);
             return reply.code(500).send({ error: error.message || 'Failed to send media' });
@@ -311,7 +310,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Unified send route
-    server.post('/api/instances/:name/send', async (request, reply) => {
+    server.post('/api/instances/:name/send', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         const unifiedSendSchema = z.object({
             type: z.string().min(1),
             number: z.string().min(1),
@@ -343,7 +342,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
                 case 'image':
                 case 'video':
                 case 'document':
-                    result = await evolution.sendMedia(name, number, type as 'image'|'video'|'document', body.media || '', body.caption || '', body.fileName || '');
+                    result = await evolution.sendMedia(name, number, type as 'image' | 'video' | 'document', body.media || '', body.caption || '', body.fileName || '');
                     break;
                 case 'audio':
                     result = await evolution.sendWhatsAppAudio(name, number, body.audio || '');
@@ -364,7 +363,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             return { success: true, result };
         } catch (error: any) {
             if (error instanceof z.ZodError) {
-                return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
             }
             server.log.error('Error sending message:', error.message);
             return reply.code(500).send({ error: error.message || 'Failed to send message' });
@@ -372,39 +371,36 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Route to sync groups for a given instance
-    server.post('/api/instances/:name/groups/sync', async (request, reply) => {
+    server.post('/api/instances/:name/groups/sync', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         try {
             const { name } = request.params as { name: string };
-            if (!name) return reply.code(400).send({ error: 'Instance name required' });
 
             server.log.info(`[SYNC] Starting sync for instance: ${name}`);
 
             const groupsResponse = await evolution.fetchAllGroups(name);
             const groups = Array.isArray(groupsResponse) ? groupsResponse : (groupsResponse as any)?.data || [];
-            
+
             server.log.info(`[SYNC] Evolution API returned ${groups.length} total groups for ${name}`);
 
             const instancesRes = await evolution.fetchInstances();
             const instancesArray = Array.isArray(instancesRes) ? instancesRes : (instancesRes as any)?.data || [];
-            const myInstance = instancesArray.find((i: any) => 
-                i.name === name || 
-                i.instance?.instanceName === name || 
+            const myInstance = instancesArray.find((i: any) =>
+                i.name === name ||
+                i.instance?.instanceName === name ||
                 i.instanceName === name
             );
 
-            // Robust bot identification
-            const botJid = myInstance?.ownerJid || 
-                           myInstance?.instance?.ownerJid || 
-                           myInstance?.number || 
-                           myInstance?.instance?.number;
+            const botJid = myInstance?.ownerJid ||
+                myInstance?.instance?.ownerJid ||
+                myInstance?.number ||
+                myInstance?.instance?.number;
 
             if (!botJid) {
-                server.log.error(`[SYNC] Bot JID not found for instance ${name}. Instance data: ${JSON.stringify(myInstance)}`);
-                return reply.code(400).send({ error: "Número da instância não encontrado. Verifique se a instância está conectada." });
+                server.log.error(`[SYNC] Bot JID not found for instance ${name}`);
+                return reply.code(400).send({ error: 'Número da instância não encontrado. Verifique se a instância está conectada.' });
             }
 
             const botId = botJid.split('@')[0];
-            server.log.info(`[SYNC] Bot ID identified as: ${botId}`);
 
             const managedGroups = groups.filter((g: any) => {
                 const participants = g.participants || [];
@@ -412,17 +408,10 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
                     const pId = (p.id || p.phoneNumber || '').split('@')[0];
                     return pId === botId;
                 });
-
-                if (!botParticipant) {
-                    // server.log.debug(`[SYNC] Bot ${botId} not in group ${g.subject || g.id}`);
-                    return false;
-                }
-
-                const isAdmin = botParticipant.admin === 'admin' || 
-                                botParticipant.admin === 'superadmin' || 
-                                botParticipant.admin === true;
-                
-                return isAdmin;
+                if (!botParticipant) return false;
+                return botParticipant.admin === 'admin' ||
+                    botParticipant.admin === 'superadmin' ||
+                    botParticipant.admin === true;
             });
 
             server.log.info(`[SYNC] Found ${managedGroups.length} groups where bot is admin.`);
@@ -435,12 +424,16 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
 
             const upsertData = managedGroups.map((g: any) => {
                 const existingId = existingJids.get(g.id);
-                return {
+                const record: Record<string, any> = {
                     id: existingId || crypto.randomUUID(),
                     instance_id: instanceData.id,
                     jid: g.id,
                     name: g.subject || g.name || 'Grupo Sem Nome',
-                    rules: existingId ? undefined : {
+                    settings: {},
+                    blacklist: []
+                };
+                if (!existingId) {
+                    record.rules = {
                         blockAudio: false,
                         blockImage: false,
                         blockLinks: true,
@@ -449,15 +442,13 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
                         blockSticker: false,
                         floodControl: true,
                         moderationEnabled: false
-                    },
-                    settings: {},
-                    blacklist: []
-                };
+                    };
+                }
+                return record;
             });
 
             if (upsertData.length > 0) {
-                const cleanedData = upsertData.map((g: any) => Object.fromEntries(Object.entries(g).filter(([_, v]) => v !== undefined)));
-                const { error } = await supabase.from('groups').upsert(cleanedData, { onConflict: 'id' });
+                const { error } = await supabase.from('groups').upsert(upsertData, { onConflict: 'id' });
                 if (error) {
                     server.log.error(`[SYNC] DB Error: ${error.message}`);
                     throw error;
@@ -468,17 +459,14 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             const groupsToDelete = (existingGroups || []).filter((dbGroup: any) => !currentJids.has(dbGroup.jid));
 
             if (groupsToDelete.length > 0) {
-                const deleteIds = groupsToDelete.map((g: any) => g.id);
-                const { error } = await supabase.from('groups').delete().in('id', deleteIds);
-                if (error) {
-                    server.log.error(`[SYNC] DB Delete Error: ${error.message}`);
-                }
+                const { error } = await supabase.from('groups').delete().in('id', groupsToDelete.map((g: any) => g.id));
+                if (error) server.log.error(`[SYNC] DB Delete Error: ${error.message}`);
             }
 
-            return { 
-                success: true, 
+            return {
+                success: true,
                 message: `Sincronizados ${upsertData.length} grupos onde você é administrador.`,
-                count: upsertData.length 
+                count: upsertData.length
             };
         } catch (error: any) {
             server.log.error(`[SYNC] Fatal Error: ${error.message}`);
@@ -487,7 +475,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Route to get participants of a WhatsApp group
-    server.get('/api/instances/:name/groups/:jid/participants', async (request, reply) => {
+    server.get('/api/instances/:name/groups/:jid/participants', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         try {
             const { name, jid } = request.params as { name: string; jid: string };
             const groups: any[] = await evolution.fetchAllGroups(name);
@@ -508,7 +496,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Route to add participants to a WhatsApp group
-    server.post('/api/instances/:name/groups/:jid/participants', async (request, reply) => {
+    server.post('/api/instances/:name/groups/:jid/participants', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         const addParticipantsSchema = z.object({
             numbers: z.array(z.string()).min(1)
         });
@@ -533,18 +521,17 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             return { success: true, results };
         } catch (error: any) {
             if (error instanceof z.ZodError) {
-                return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
             }
             server.log.error('Error adding participants:', error.message);
-            return reply.code(500).header('Access-Control-Allow-Origin', '*').send({ error: error.message || 'Failed to add participants' });
+            return reply.code(500).send({ error: error.message || 'Failed to add participants' });
         }
     });
 
     // Route to delete an Evolution instance
-    server.delete('/api/instances/:name', async (request, reply) => {
+    server.delete('/api/instances/:name', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         try {
             const { name } = request.params as { name: string };
-            if (!name) return reply.code(400).send({ error: 'Instance name required' });
 
             server.log.info(`Deleting Evolution instance: ${name}`);
 
@@ -566,7 +553,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             return { success: true, message: `Instance ${name} deleted successfully` };
         } catch (error: any) {
             server.log.error(error);
-            return reply.code(500).header('Access-Control-Allow-Origin', '*').send({ error: error.message || 'Failed to delete instance' });
+            return reply.code(500).send({ error: error.message || 'Failed to delete instance' });
         }
     });
 }

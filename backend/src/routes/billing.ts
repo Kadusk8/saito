@@ -1,13 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import Stripe from 'stripe';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '../db';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
+if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY is missing from environment variables.');
+}
 
-const supabase = createClient(
-    process.env.SUPABASE_URL as string,
-    (process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY) as string
-);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export default async function billingRoutes(server: FastifyInstance) {
 
@@ -17,15 +16,16 @@ export default async function billingRoutes(server: FastifyInstance) {
         if (!user) return reply.code(401).send({ error: 'Unauthorized' });
 
         const { price_id } = req.body as { price_id: string };
+        if (!price_id) return reply.code(400).send({ error: 'price_id is required' });
 
         try {
-            const { data: customerData } = await supabase
+            const { data: customerData } = await supabaseAdmin
                 .from('stripe_customers')
                 .select('stripe_customer_id')
                 .eq('organization_id', user.organization_id)
                 .single();
 
-            let customerId = customerData?.stripe_customer_id;
+            const customerId = customerData?.stripe_customer_id;
             const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
             const session = await stripe.checkout.sessions.create({
@@ -38,6 +38,7 @@ export default async function billingRoutes(server: FastifyInstance) {
                 customer_email: customerId ? undefined : user.email,
                 customer: customerId,
             });
+
             return { url: session.url };
         } catch (error: any) {
             server.log.error(error);
@@ -49,6 +50,7 @@ export default async function billingRoutes(server: FastifyInstance) {
     server.post('/api/billing/public-checkout', async (req, reply) => {
         const { price_id, email } = req.body as { price_id: string; email: string };
         if (!email) return reply.code(400).send({ error: 'Email is required for checkout' });
+        if (!price_id) return reply.code(400).send({ error: 'price_id is required' });
 
         try {
             const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -60,11 +62,9 @@ export default async function billingRoutes(server: FastifyInstance) {
                 success_url: `${FRONTEND_URL}/signup?success=true&email=${encodeURIComponent(email)}`,
                 cancel_url: `${FRONTEND_URL}/pricing?canceled=true`,
                 customer_email: email,
-                metadata: {
-                    is_new_user: 'true',
-                    email: email
-                }
+                metadata: { is_new_user: 'true', email }
             });
+
             return { url: session.url };
         } catch (error: any) {
             server.log.error(error);
@@ -78,7 +78,7 @@ export default async function billingRoutes(server: FastifyInstance) {
         if (!user) return reply.code(401).send({ error: 'Unauthorized' });
 
         try {
-            const { data: customerData } = await supabase
+            const { data: customerData } = await supabaseAdmin
                 .from('stripe_customers')
                 .select('stripe_customer_id')
                 .eq('organization_id', user.organization_id)
@@ -107,13 +107,16 @@ export default async function billingRoutes(server: FastifyInstance) {
         const sig = req.headers['stripe-signature'];
         const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
+        if (!sig || !endpointSecret) {
+            return reply.code(400).send({ error: 'Missing stripe signature or webhook secret' });
+        }
+
         let event: Stripe.Event;
 
         try {
-            // Using fastify-raw-body to get the exact raw buffer for signature verification
-            event = stripe.webhooks.constructEvent((req as any).rawBody, sig as string, endpointSecret as string);
+            event = stripe.webhooks.constructEvent((req as any).rawBody, sig, endpointSecret);
         } catch (err: any) {
-            server.log.error(`⚠️ Webhook signature verification failed.`, err.message);
+            server.log.error('Webhook signature verification failed:', err.message);
             return reply.code(400).send(`Webhook Error: ${err.message}`);
         }
 
@@ -125,51 +128,56 @@ export default async function billingRoutes(server: FastifyInstance) {
                     const customerId = session.customer as string;
                     const email = session.customer_details?.email || session.metadata?.email;
 
-                    // Handle New User Provisioning
                     if (!organizationId && email) {
-                        server.log.info(`[STRIPE] New user checkout detected for ${email}. Provisioning...`);
-                        
-                        // 1. Try to invite the user (sends email via Resend automatically)
+                        server.log.info(`[STRIPE] New user checkout for ${email}. Provisioning...`);
+
                         const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
-                        const { data: authData, error: authError } = await supabase.auth.admin.inviteUserByEmail(email, {
+                        const { data: authData, error: authError } = await supabaseAdmin.auth.admin.inviteUserByEmail(email, {
                             data: { source: 'stripe_checkout' },
                             redirectTo: `${FRONTEND_URL}/auth/confirm?next=/dashboard`
                         });
 
                         if (authError) {
                             if (authError.message.includes('already been registered') || authError.message.includes('already registered')) {
-                                // User already exists — send a password reset email so they can access
-                                server.log.info(`[STRIPE] User ${email} already exists. Sending password reset email...`);
-                                await supabase.auth.resetPasswordForEmail(email, {
+                                server.log.info(`[STRIPE] User ${email} already exists. Sending password reset...`);
+                                await supabaseAdmin.auth.resetPasswordForEmail(email, {
                                     redirectTo: `${FRONTEND_URL}/auth/confirm?next=/signup/set-password`
                                 });
-                                // Supabase sends the magic link email automatically via SMTP/Resend
                             } else {
                                 server.log.error(`[STRIPE] Failed to create user: ${authError.message}`);
                             }
                         }
 
-                        // Get user ID (either newly created or existing)
-                        const userId = authData?.user?.id || 
-                            (await supabase.from('users').select('id').eq('email', email).single()).data?.id;
-                        
+                        // Busca o userId — seja do novo usuário criado ou do existente
+                        const newUserId = authData?.user?.id;
+                        const existingUserId = newUserId
+                            ? undefined
+                            : (await supabaseAdmin.from('users').select('id').eq('email', email).single()).data?.id;
+
+                        const userId = newUserId || existingUserId;
+
                         if (userId) {
-                            // Wait for DB trigger to create the org (handle_new_user)
-                            await new Promise(resolve => setTimeout(resolve, 1500));
-                            
-                            const { data: orgData } = await supabase
-                                .from('users_organizations')
-                                .select('organization_id')
-                                .eq('user_id', userId)
-                                .maybeSingle();
-                            
-                            organizationId = orgData?.organization_id;
+                            // Aguarda o trigger handle_new_user criar a org (com retry ao invés de sleep fixo)
+                            let orgId: string | undefined;
+                            for (let attempt = 0; attempt < 5; attempt++) {
+                                await new Promise(r => setTimeout(r, 1000));
+                                const { data: orgData } = await supabaseAdmin
+                                    .from('user_roles')
+                                    .select('organization_id')
+                                    .eq('user_id', userId)
+                                    .maybeSingle();
+                                if (orgData?.organization_id) {
+                                    orgId = orgData.organization_id;
+                                    break;
+                                }
+                            }
+                            organizationId = orgId ?? null;
                             server.log.info(`[STRIPE] User ${userId} provisioned with Org ${organizationId}`);
                         }
                     }
 
                     if (organizationId && customerId) {
-                        await supabase
+                        await supabaseAdmin
                             .from('stripe_customers')
                             .upsert({ organization_id: organizationId, stripe_customer_id: customerId });
                     }
@@ -182,8 +190,7 @@ export default async function billingRoutes(server: FastifyInstance) {
                     const subscription = event.data.object as Stripe.Subscription;
                     const customerId = subscription.customer as string;
 
-                    // Find the organization mapped to this Stripe customer
-                    const { data: customerData } = await supabase
+                    const { data: customerData } = await supabaseAdmin
                         .from('stripe_customers')
                         .select('organization_id')
                         .eq('stripe_customer_id', customerId)
@@ -194,8 +201,7 @@ export default async function billingRoutes(server: FastifyInstance) {
                         break;
                     }
 
-                    // Upsert subscription data
-                    await supabase.from('subscriptions').upsert({
+                    await supabaseAdmin.from('subscriptions').upsert({
                         organization_id: customerData.organization_id,
                         stripe_subscription_id: subscription.id,
                         status: subscription.status,
@@ -209,8 +215,7 @@ export default async function billingRoutes(server: FastifyInstance) {
                 }
             }
         } catch (error: any) {
-            server.log.error('Error handling webhook event:', error);
-            // Non-fatal, just log it. Acknowledge the webhook so Stripe doesn't retry forever.
+            server.log.error({ err: error }, 'Error handling webhook event');
         }
 
         return reply.code(200).send({ received: true });

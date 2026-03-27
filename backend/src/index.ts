@@ -1,6 +1,5 @@
 import 'dotenv/config';
 import fastify from 'fastify';
-import { z } from 'zod';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { supabase, redisConnection, messageQueue, evolution } from './db';
@@ -10,23 +9,27 @@ import billingRoutes from './routes/billing';
 import strikesRoutes from './routes/strikes';
 import aiRoutes from './routes/ai';
 import instanceRoutes from './routes/instances';
-import { authenticate, activeSubscriptionRequired } from './middleware/auth';
+import { authenticate } from './middleware/auth';
 import type { AuthenticatedRequest } from './middleware/auth';
 import rawBody from 'fastify-raw-body';
-import { checkInstanceCreationLimit } from './services/billing-limits';
 
 const server = fastify({ logger: true, bodyLimit: 52428800 }); // 50MB limit for media uploads
 
+const allowedOrigins = process.env.FRONTEND_URL
+  ? [process.env.FRONTEND_URL]
+  : ['http://localhost:3000'];
+
 server.register(cors, {
-  origin: '*',
+  origin: allowedOrigins,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  credentials: true,
 });
 
 // Configure Global Rate Limiting
 server.register(rateLimit, {
-  max: 100, // default max 100 requests
-  timeWindow: '1 minute', // per minute
-  errorResponseBuilder: function (request, context) {
+  max: 100,
+  timeWindow: '1 minute',
+  errorResponseBuilder: function (_request, context) {
     return {
       statusCode: 429,
       error: 'Too Many Requests',
@@ -51,11 +54,10 @@ server.register(strikesRoutes);
 server.register(aiRoutes);
 
 // Basic Webhook route to receive Evolution API payloads
-server.post('/webhooks/evolution', async (request, reply) => {
+server.post('/webhooks/evolution', async (request) => {
   const payload = request.body as any;
   server.log.info({ payload }, 'Received webhook');
 
-  // Here we'll dispatch to BullMQ to avoid holding up the Evolution API request
   await messageQueue.add('handle-message', payload);
 
   return { status: 'received' };
@@ -66,7 +68,7 @@ server.post('/webhooks/evolution', async (request, reply) => {
 instanceRoutes(server, evolution);
 
 // Route to delete a Monitored Group
-server.delete('/api/groups/:id', async (request, reply) => {
+server.delete('/api/groups/:id', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
   try {
     const { id } = request.params as { id: string };
     if (!id) return reply.code(400).send({ error: 'Group ID required' });
