@@ -181,7 +181,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             const results: { jid: string; success: boolean; error?: string }[] = [];
 
             for (let i = 0; i < jids.length; i++) {
-                const jid = jids[i];
+                const jid = jids[i]!;
                 try {
                     await evolution.sendGroupMessage(name, jid, text.trim());
                     results.push({ jid, success: true });
