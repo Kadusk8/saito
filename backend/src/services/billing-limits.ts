@@ -1,6 +1,6 @@
 import { supabase } from '../db';
 
-export type PlanLevel = 'starter' | 'pro' | 'enterprise' | 'free';
+export type PlanLevel = 'starter' | 'pro' | 'master' | 'free';
 
 /**
  * Maps Stripe price IDs to Plan Levels
@@ -10,13 +10,12 @@ export function getPlanLevelFromPriceId(priceId: string | undefined | null): Pla
 
     const STARTER_PRICE = process.env.STRIPE_STARTER_PRICE_ID;
     const PRO_PRICE = process.env.STRIPE_PRO_PRICE_ID;
-    const ENTERPRISE_PRICE = process.env.STRIPE_ENTERPRISE_PRICE_ID;
+    const MASTER_PRICE = process.env.STRIPE_MASTER_PRICE_ID;
 
-    if (priceId === ENTERPRISE_PRICE) return 'enterprise';
+    if (priceId === MASTER_PRICE) return 'master';
     if (priceId === PRO_PRICE) return 'pro';
     if (priceId === STARTER_PRICE) return 'starter';
 
-    // Fallback if price ID is unknown but they have an active sub
     return 'starter';
 }
 
@@ -25,29 +24,36 @@ export function getPlanLevelFromPriceId(priceId: string | undefined | null): Pla
  */
 export function getMaxInstancesForPlan(level: PlanLevel): number {
     switch (level) {
-        case 'enterprise': return 10;
+        case 'master': return 15;
         case 'pro': return 5;
         case 'starter': return 2;
-        default: return 0; // Free has no WA instances allowed in our standard rule
+        default: return 0;
+    }
+}
+
+/**
+ * Returns the maximum allowed team members for a given Plan Level
+ */
+export function getMaxTeamMembersForPlan(level: PlanLevel): number {
+    switch (level) {
+        case 'master': return 10;
+        case 'pro': return 2;
+        case 'starter': return 1;
+        default: return 1;
     }
 }
 
 /**
  * Validates if the organization can create a new WA instance.
- * Throws an error string if blocked.
  */
 export async function checkInstanceCreationLimit(organizationId: string, subscription: any): Promise<{ allowed: boolean, reason?: string }> {
-
-    // Determine their plan level
     const level = getPlanLevelFromPriceId(subscription?.price_id);
     const maxAllowed = getMaxInstancesForPlan(level);
 
-    // If maxAllowed is somehow 0 (free tier or err)
     if (maxAllowed === 0) {
         return { allowed: false, reason: 'Seu plano atual não permite criar conexões no WhatsApp. Faça upgrade para o plano Starter.' };
     }
 
-    // Count how many ACTIVE instances this org already has
     const { count, error } = await supabase
         .from('instances')
         .select('*', { count: 'exact', head: true })
@@ -70,9 +76,36 @@ export async function checkInstanceCreationLimit(organizationId: string, subscri
 }
 
 /**
+ * Validates if the organization can add a new team member.
+ */
+export async function checkTeamMemberLimit(organizationId: string, subscription: any): Promise<{ allowed: boolean, reason?: string }> {
+    const level = getPlanLevelFromPriceId(subscription?.price_id);
+    const maxAllowed = getMaxTeamMembersForPlan(level);
+
+    const { count, error } = await supabase
+        .from('user_roles')
+        .select('*', { count: 'exact', head: true })
+        .eq('organization_id', organizationId);
+
+    if (error) {
+        throw new Error('Falha ao contar os membros da equipe.');
+    }
+
+    const currentCount = count || 0;
+
+    if (currentCount >= maxAllowed) {
+        return {
+            allowed: false,
+            reason: `Limite do plano atingido: Seu plano ${level.toUpperCase()} permite até ${maxAllowed} ${maxAllowed === 1 ? 'membro' : 'membros'} de equipe.`
+        };
+    }
+
+    return { allowed: true };
+}
+
+/**
  * Checks if the plan level allows Premium features like Humanization strings
  */
 export function canUsePremiumBroadcasting(level: PlanLevel): boolean {
-    // Only Pro and Enterprise
-    return level === 'pro' || level === 'enterprise';
+    return level === 'pro' || level === 'master';
 }

@@ -160,11 +160,33 @@ export default function SettingsPage() {
         }
     }
 
-    function handleInvite() {
+    async function handleInvite() {
         if (!inviteEmail) return;
-        setMessage({ type: 'success', text: `Convite enviado para ${inviteEmail} (Simulação)` });
-        setInviteEmail('');
-        setTimeout(() => setMessage(null), 3000);
+        setSaving(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/team/invite`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session?.access_token}`
+                },
+                body: JSON.stringify({ email: inviteEmail })
+            });
+            const json = await res.json();
+            if (!res.ok) {
+                setMessage({ type: 'error', text: json.error || 'Falha ao enviar convite' });
+            } else {
+                setMessage({ type: 'success', text: `Convite enviado para ${inviteEmail}` });
+                setInviteEmail('');
+                setTeamCount(c => c + 1);
+            }
+        } catch {
+            setMessage({ type: 'error', text: 'Erro de conexão com o servidor' });
+        } finally {
+            setSaving(false);
+            setTimeout(() => setMessage(null), 4000);
+        }
     }
 
     if (loading) {

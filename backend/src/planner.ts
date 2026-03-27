@@ -4,20 +4,12 @@ import { AIService } from './services/ai-service';
 import * as fs from 'fs';
 import * as path from 'path';
 import { z } from 'zod';
-import { activeSubscriptionRequired } from './middleware/auth';
+import { authenticate, activeSubscriptionRequired } from './middleware/auth';
 import type { AuthenticatedRequest } from './middleware/auth';
-
-// ─── Planner Routes ─────────────────────────────────────────────────────────
-// Mounts under /api/planner
-// Provides: plan CRUD, AI chat (Gemini), timeline generation, and "Consolidar e Executar"
 
 const EVOLUTION_URL = process.env.EVOLUTION_URL;
 const EVOLUTION_KEY = process.env.EVOLUTION_GLOBAL_KEY;
 
-// AIService is used instead of local initialization
-
-
-// ── Saito Strategist System Prompt ────────────────────────────────────────────
 function buildSystemPrompt(productType: string, strategicManual: string = '') {
     const nicheMap: Record<string, string> = {
         infoproduto: 'Foque em Autoridade e Bônus. Gatilhos: "acesso exclusivo", "bônus especial para quem entrar agora", "método validado por X alunos".',
@@ -89,17 +81,16 @@ export async function plannerRoutes(
 
     // ── A. PLANS CRUD ──────────────────────────────────────────────────────────
 
-    // List plans
-    server.get('/api/planner', async (_req, reply) => {
+    server.get('/api/planner', { preHandler: [authenticate] }, async (req: AuthenticatedRequest, reply) => {
         const { data, error } = await supabase
             .from('launch_plans')
             .select('*, instance:instances(id, name), launch_plan_messages(count)')
+            .eq('organization_id', req.user?.organization_id)
             .order('created_at', { ascending: false });
         if (error) return reply.code(500).send({ error: error.message });
         return data;
     });
 
-    // Create plan (from briefing start — just product_type and instance)
     server.post('/api/planner', { preHandler: [activeSubscriptionRequired] }, async (req: AuthenticatedRequest, reply) => {
         const createPlanSchema = z.object({
             product_type: z.string().min(1),
@@ -107,48 +98,45 @@ export async function plannerRoutes(
             instance_id: z.string().uuid().nullish().or(z.literal('')),
             campaign_id: z.string().uuid().nullish().or(z.literal(''))
         });
-        
+
         try {
             const body = createPlanSchema.parse(req.body);
             const { product_type, product_name, instance_id, campaign_id } = body;
 
-            // Include organization_id for defense in depth
             const { data, error } = await supabase
                 .from('launch_plans')
-                .insert({ 
-                    product_type, 
-                    product_name: product_name || 'Novo Produto', 
-                    instance_id, 
+                .insert({
+                    product_type,
+                    product_name: product_name || 'Novo Produto',
+                    instance_id,
                     campaign_id,
-                    organization_id: req.user?.organization_id 
+                    organization_id: req.user?.organization_id
                 })
                 .select()
                 .single();
             if (error) return reply.code(500).send({ error: error.message });
             return reply.code(201).send(data);
         } catch (error: any) {
-             if (error instanceof z.ZodError) {
-                 console.error('[POST /api/planner] Zod Error:', (error as any).issues);
-                 return reply.code(400).send({ error: 'Validation Error', details: (error as any).issues });
-             }
-             return reply.code(500).send({ error: error.message });
+            if (error instanceof z.ZodError) {
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
+            }
+            return reply.code(500).send({ error: error.message });
         }
     });
 
-    // Get plan with messages and assets
-    server.get('/api/planner/:id', async (req, reply) => {
+    server.get('/api/planner/:id', { preHandler: [authenticate] }, async (req: AuthenticatedRequest, reply) => {
         const { id } = req.params as { id: string };
         const { data, error } = await supabase
             .from('launch_plans')
             .select('*, instance:instances(id, name), launch_plan_messages(*), launch_plan_assets(*)')
             .eq('id', id)
+            .eq('organization_id', req.user?.organization_id)
             .single();
         if (error) return reply.code(404).send({ error: 'Plan not found' });
         return data;
     });
 
-    // Update plan
-    server.patch('/api/planner/:id', async (req, reply) => {
+    server.patch('/api/planner/:id', { preHandler: [authenticate] }, async (req: AuthenticatedRequest, reply) => {
         const updatePlanSchema = z.object({
             product_name: z.string().optional(),
             offer_date: z.string().optional(),
@@ -165,30 +153,33 @@ export async function plannerRoutes(
                 .from('launch_plans')
                 .update({ ...body, updated_at: new Date().toISOString() })
                 .eq('id', id)
+                .eq('organization_id', req.user?.organization_id)
                 .select()
                 .single();
             if (error) return reply.code(500).send({ error: error.message });
             return data;
         } catch (error: any) {
-             if (error instanceof z.ZodError) {
-                 return reply.code(400).send({ error: 'Validation Error', details: (error as any).issues });
-             }
-             return reply.code(500).send({ error: error.message });
+            if (error instanceof z.ZodError) {
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
+            }
+            return reply.code(500).send({ error: error.message });
         }
     });
 
-    // Delete plan
-    server.delete('/api/planner/:id', async (req, reply) => {
+    server.delete('/api/planner/:id', { preHandler: [authenticate] }, async (req: AuthenticatedRequest, reply) => {
         const { id } = req.params as { id: string };
-        const { error } = await supabase.from('launch_plans').delete().eq('id', id);
+        const { error } = await supabase
+            .from('launch_plans')
+            .delete()
+            .eq('id', id)
+            .eq('organization_id', req.user?.organization_id);
         if (error) return reply.code(500).send({ error: error.message });
         return { success: true };
     });
 
     // ── B. MESSAGES ────────────────────────────────────────────────────────────
 
-    // Bulk upsert messages (after AI generates full timeline)
-    server.post('/api/planner/:id/messages', async (req, reply) => {
+    server.post('/api/planner/:id/messages', { preHandler: [authenticate] }, async (req: AuthenticatedRequest, reply) => {
         const upsertMessagesSchema = z.object({
             messages: z.array(z.object({
                 phase: z.string(),
@@ -203,7 +194,6 @@ export async function plannerRoutes(
             const body = upsertMessagesSchema.parse(req.body);
             const { messages } = body;
 
-            // Delete old messages first
             await supabase.from('launch_plan_messages').delete().eq('plan_id', id);
 
             const rows = messages.map(m => ({
@@ -221,15 +211,14 @@ export async function plannerRoutes(
             if (error) return reply.code(500).send({ error: error.message });
             return data;
         } catch (error: any) {
-             if (error instanceof z.ZodError) {
-                 return reply.code(400).send({ error: 'Validation Error', details: (error as any).issues });
-             }
-             return reply.code(500).send({ error: error.message });
+            if (error instanceof z.ZodError) {
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
+            }
+            return reply.code(500).send({ error: error.message });
         }
     });
 
-    // Update a single message
-    server.patch('/api/planner/:id/messages/:msgId', async (req, reply) => {
+    server.patch('/api/planner/:id/messages/:msgId', { preHandler: [authenticate] }, async (req: AuthenticatedRequest, reply) => {
         const { msgId } = req.params as { id: string; msgId: string };
         const body = req.body as any;
         const { data, error } = await supabase
@@ -242,8 +231,7 @@ export async function plannerRoutes(
         return data;
     });
 
-    // Delete a message
-    server.delete('/api/planner/:id/messages/:msgId', async (req, reply) => {
+    server.delete('/api/planner/:id/messages/:msgId', { preHandler: [authenticate] }, async (req: AuthenticatedRequest, reply) => {
         const { msgId } = req.params as { id: string; msgId: string };
         const { error } = await supabase.from('launch_plan_messages').delete().eq('id', msgId);
         if (error) return reply.code(500).send({ error: error.message });
@@ -252,19 +240,18 @@ export async function plannerRoutes(
 
     // ── C. ASSETS ──────────────────────────────────────────────────────────────
 
-    server.post('/api/planner/:id/assets', async (req, reply) => {
+    server.post('/api/planner/:id/assets', { preHandler: [authenticate] }, async (req: AuthenticatedRequest, reply) => {
         const assetSchema = z.object({
             asset_type: z.string(),
             url: z.string(),
             label: z.string().optional()
         });
         const { id } = req.params as { id: string };
-        
+
         try {
             const body = assetSchema.parse(req.body);
             const { asset_type, url, label } = body;
 
-            // Upsert by asset_type
             const { data: existing } = await supabase
                 .from('launch_plan_assets')
                 .select('id')
@@ -291,17 +278,16 @@ export async function plannerRoutes(
             }
             return result;
         } catch (error: any) {
-             if (error instanceof z.ZodError) {
-                 return reply.code(400).send({ error: 'Validation Error', details: (error as any).issues });
-             }
-             return reply.code(500).send({ error: error.message });
+            if (error instanceof z.ZodError) {
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
+            }
+            return reply.code(500).send({ error: error.message });
         }
     });
 
     // ── D. AI CHAT ─────────────────────────────────────────────────────────────
-    // Stateless endpoint — receives full conversation history, returns next AI message
 
-    server.post('/api/planner/ai-chat', async (req, reply) => {
+    server.post('/api/planner/ai-chat', { preHandler: [activeSubscriptionRequired] }, async (req: AuthenticatedRequest, reply) => {
         const aiChatSchema = z.object({
             messages: z.array(z.object({
                 role: z.enum(['user', 'model']),
@@ -316,73 +302,46 @@ export async function plannerRoutes(
             const { messages, product_type, plan_id } = body;
 
             if (!process.env.OPENAI_API_KEY) return reply.code(500).send({ error: 'OPENAI_API_KEY not configured' });
-            // Load strategic manual
+
             let strategicManual = '';
             try {
                 const manualPath = path.join(__dirname, 'knowledge', 'meteorico-starter.md');
                 if (fs.existsSync(manualPath)) {
                     strategicManual = fs.readFileSync(manualPath, 'utf8');
-                } else {
-                    // Absolute path fallback for safety
-                    const fallbackPath = '/Users/mac/saito/backend/src/knowledge/meteorico-starter.md';
-                    if (fs.existsSync(fallbackPath)) {
-                        strategicManual = fs.readFileSync(fallbackPath, 'utf8');
-                    }
                 }
             } catch (err) {
-                console.error('[AI Chat] Error loading manual:', err);
+                server.log.warn({ err }, '[Planner] Could not load strategic manual');
             }
 
             const systemPrompt = buildSystemPrompt(product_type, strategicManual);
 
-            // Fetch additional context if plan_id is provided
             let planContext = '';
             if (plan_id) {
-                try {
-                    const { data: plan } = await supabase
-                        .from('launch_plans')
-                        .select('product_name, product_description, briefing_json')
-                        .eq('id', plan_id)
-                        .single();
-                    
-                    if (plan) {
-                        planContext = `\n--- CONTEXTO DO PLANO ATUAL ---\n` +
-                                     `Produto: ${plan.product_name || 'Não informado'}\n` +
-                                     `Descrição: ${plan.product_description || 'Não informada'}\n` +
-                                     `Dados já coletados: ${JSON.stringify(plan.briefing_json || {})}\n` +
-                                     `--------------------------------\n`;
-                    }
-                } catch (err) {
-                    console.error('[AI Chat] Error fetching plan context:', err);
+                const { data: plan } = await supabase
+                    .from('launch_plans')
+                    .select('product_name, product_description, briefing_json')
+                    .eq('id', plan_id)
+                    .eq('organization_id', req.user?.organization_id)
+                    .single();
+
+                if (plan) {
+                    planContext = `\n--- CONTEXTO DO PLANO ATUAL ---\n` +
+                        `Produto: ${plan.product_name || 'Não informado'}\n` +
+                        `Descrição: ${plan.product_description || 'Não informada'}\n` +
+                        `Dados já coletados: ${JSON.stringify(plan.briefing_json || {})}\n` +
+                        `--------------------------------\n`;
                 }
             }
 
-            let aiResult;
-            try {
-                aiResult = await AIService.chat(messages, systemPrompt + '\n' + planContext);
-            } catch (error: any) {
-                console.error('=== AI GENERATE ERROR ===');
-                console.error('Message:', error.message);
-                console.error('Details:', error);
-                throw error;
-            }
-
+            const aiResult = await AIService.chat(messages, systemPrompt + '\n' + planContext);
             const text = aiResult.text;
 
-            if (!text) {
-                console.error('=== AI EMPTY RESPONSE ===', JSON.stringify(aiResult, null, 2));
-            }
-
-            // Try to extract JSON plan if present
             let planData = null;
             const jsonMatch = typeof text === 'string' ? text.match(/```json\n([\s\S]*?)\n```/) : null;
             if (jsonMatch && jsonMatch[1]) {
-                try {
-                    planData = JSON.parse(jsonMatch[1]);
-                } catch { /* ignore parse errors */ }
+                try { planData = JSON.parse(jsonMatch[1]); } catch { /* ignore */ }
             }
 
-            // If plan is ready and we have a plan_id, save the messages to DB
             if (planData?.plan_ready && plan_id && planData.messages) {
                 const rows = planData.messages.map((m: any) => ({
                     plan_id,
@@ -407,35 +366,39 @@ export async function plannerRoutes(
 
             return { text, plan_ready: !!planData?.plan_ready, plan: planData };
         } catch (error: any) {
-             if (error instanceof z.ZodError) {
-                 console.error('[POST /api/planner/ai-chat] Zod Error:', (error as any).issues);
-                 return reply.code(400).send({ error: 'Validation Error', details: (error as any).issues });
-             }
-             return reply.code(500).send({ error: error.message });
+            if (error instanceof z.ZodError) {
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
+            }
+            server.log.error({ err: error }, '[Planner] AI chat error');
+            return reply.code(500).send({ error: error.message });
         }
     });
 
     // AI Refine — refine a specific message copy
-    server.post('/api/planner/:id/messages/:msgId/refine', async (req, reply) => {
+    server.post('/api/planner/:id/messages/:msgId/refine', { preHandler: [authenticate] }, async (req: AuthenticatedRequest, reply) => {
         const refineSchema = z.object({
             instruction: z.string().optional()
         });
         const { msgId } = req.params as { id: string; msgId: string };
-        
+
         try {
             const body = refineSchema.parse(req.body);
             const { instruction } = body;
 
-        const { data: msg } = await supabase
-            .from('launch_plan_messages')
-            .select('*, plan:launch_plans(product_type, product_name)')
-            .eq('id', msgId)
-            .single();
+            if (!process.env.OPENAI_API_KEY) return reply.code(500).send({ error: 'OPENAI_API_KEY not configured' });
 
-        if (!msg) return reply.code(404).send({ error: 'Message not found' });
-        if (!process.env.GEMINI_API_KEY) return reply.code(500).send({ error: 'GEMINI_API_KEY not configured' });
+            const { data: msg } = await supabase
+                .from('launch_plan_messages')
+                .select('*, plan:launch_plans(product_type, product_name, organization_id)')
+                .eq('id', msgId)
+                .single();
 
-        const prompt = `Você é um especialista em copywriting para lançamentos no WhatsApp.
+            if (!msg) return reply.code(404).send({ error: 'Message not found' });
+            if (msg.plan?.organization_id !== req.user?.organization_id) {
+                return reply.code(403).send({ error: 'Forbidden' });
+            }
+
+            const prompt = `Você é um especialista em copywriting para lançamentos no WhatsApp.
 
 Produto: ${msg.plan?.product_name || 'desconhecido'}
 Tipo: ${msg.plan?.product_type || 'infoproduto'}
@@ -447,11 +410,9 @@ ${instruction ? `Instrução do usuário: ${instruction}` : 'Refine esta copy pa
 
 Responda APENAS com a copy refinada, sem explicações.`;
 
-
             const refined = await AIService.refine(prompt);
             const tooLong = refined.length > 800;
 
-            // Update in DB
             await supabase.from('launch_plan_messages').update({
                 content: refined,
                 refined_by_ai: true,
@@ -459,30 +420,30 @@ Responda APENAS com a copy refinada, sem explicações.`;
 
             return { content: refined, too_long_warning: tooLong, original: msg.content };
         } catch (error: any) {
-             if (error instanceof z.ZodError) {
-                 return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
-             }
-             return reply.code(500).send({ error: error.message });
+            if (error instanceof z.ZodError) {
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
+            }
+            return reply.code(500).send({ error: error.message });
         }
     });
 
     // GET Plan by Campaign ID
-    server.get('/api/planner/campaign/:campaignId', async (req, reply) => {
+    server.get('/api/planner/campaign/:campaignId', { preHandler: [authenticate] }, async (req: AuthenticatedRequest, reply) => {
         const { campaignId } = req.params as { campaignId: string };
         const { data, error } = await supabase
             .from('launch_plans')
             .select('*, launch_plan_messages(*)')
             .eq('campaign_id', campaignId)
+            .eq('organization_id', req.user?.organization_id)
             .maybeSingle();
 
         if (error) return reply.code(500).send({ error: error.message });
         if (!data) return reply.code(404).send({ error: 'No plan found for this campaign' });
-
         return data;
     });
 
-    // Apply Plan to Campaign (Schedule messages)
-    server.post('/api/planner/plan/:id/apply', async (req, reply) => {
+    // Apply Plan to Campaign
+    server.post('/api/planner/plan/:id/apply', { preHandler: [authenticate] }, async (req: AuthenticatedRequest, reply) => {
         const { id } = req.params as { id: string };
 
         try {
@@ -490,23 +451,20 @@ Responda APENAS com a copy refinada, sem explicações.`;
                 .from('launch_plans')
                 .select('*, launch_plan_messages(*)')
                 .eq('id', id)
+                .eq('organization_id', req.user?.organization_id)
                 .single();
 
             if (!plan) return reply.code(404).send({ error: 'Plan not found' });
             if (!plan.campaign_id) return reply.code(400).send({ error: 'Plan is not linked to a campaign' });
             if (!plan.offer_date) return reply.code(400).send({ error: 'Plan must have an offer_date' });
 
-            // 1. Delete existing scheduled messages for this campaign to avoid duplicates
             await supabase.from('launch_messages').delete().eq('campaign_id', plan.campaign_id);
 
-            // 2. Schedule new messages
             const offerDate = new Date(plan.offer_date).getTime();
             let scheduled = 0;
 
             for (const msg of (plan.launch_plan_messages || [])) {
                 const scheduledAt = new Date(offerDate + msg.scheduled_offset_hours * 60 * 60 * 1000);
-                
-                // Only schedule future messages
                 if (scheduledAt.getTime() < Date.now()) continue;
 
                 let content = msg.content;
@@ -536,9 +494,7 @@ Responda APENAS com a copy refinada, sem explicações.`;
                 }
             }
 
-            // 3. Mark plan as executed
             await supabase.from('launch_plans').update({ status: 'executing' }).eq('id', id);
-
             return { success: true, messages_scheduled: scheduled };
         } catch (error: any) {
             return reply.code(500).send({ error: error.message });
@@ -547,7 +503,7 @@ Responda APENAS com a copy refinada, sem explicações.`;
 
     // ── E. CONSOLIDAR E EXECUTAR ───────────────────────────────────────────────
 
-    server.post('/api/planner/:id/execute', async (req, reply) => {
+    server.post('/api/planner/:id/execute', { preHandler: [activeSubscriptionRequired] }, async (req: AuthenticatedRequest, reply) => {
         const executeSchema = z.object({
             auto_create_groups: z.boolean().optional(),
             group_count: z.number().int().positive().optional().default(3),
@@ -556,141 +512,129 @@ Responda APENAS com a copy refinada, sem explicações.`;
             overflow_limit: z.number().int().positive().optional().default(250)
         });
         const { id } = req.params as { id: string };
-        
+
         try {
             const body = executeSchema.parse(req.body);
             const { auto_create_groups, group_count, group_name_pattern, admin_number, overflow_limit } = body;
+            const log: string[] = [];
 
-        const log: string[] = [];
+            const { data: plan } = await supabase
+                .from('launch_plans')
+                .select('*, instance:instances(id, name), launch_plan_messages(*), launch_plan_assets(*)')
+                .eq('id', id)
+                .eq('organization_id', req.user?.organization_id)
+                .single();
 
-        const { data: plan } = await supabase
-            .from('launch_plans')
-            .select('*, instance:instances(id, name), launch_plan_messages(*), launch_plan_assets(*)')
-            .eq('id', id)
-            .single();
+            if (!plan) return reply.code(404).send({ error: 'Plan not found' });
+            if (!plan.offer_date) return reply.code(400).send({ error: 'Plan must have an offer_date before executing' });
+            if (!plan.instance_id) return reply.code(400).send({ error: 'Plan must have an instance selected' });
 
-        if (!plan) return reply.code(404).send({ error: 'Plan not found' });
-        if (!plan.offer_date) return reply.code(400).send({ error: 'Plan must have an offer_date before executing' });
-        if (!plan.instance_id) return reply.code(400).send({ error: 'Plan must have an instance selected' });
+            log.push('✅ Plano validado');
 
-        log.push('✅ Plano validado');
-
-        // Step 1: Create Super Grupos campaign
-        const { data: campaign, error: ce } = await supabase
-            .from('launch_campaigns')
-            .insert({
-                name: plan.product_name,
-                instance_id: plan.instance_id,
-                offer_date: plan.offer_date,
-                overflow_limit,
-            })
-            .select()
-            .single();
-
-        if (ce) return reply.code(500).send({ error: `Failed to create campaign: ${ce.message}`, log });
-        log.push(`✅ Campanha "Super Grupos" criada: ${campaign.id}`);
-
-        // Step 2: Create groups (auto or none — user can add later)
-        const instanceName = plan.instance?.name;
-        let groupsCreated = 0;
-
-        if (auto_create_groups && instanceName) {
-            if (!EVOLUTION_URL || !EVOLUTION_KEY) {
-                return reply.code(500).send({ error: 'Evolution API configuration missing', log });
-            }
-            const namePattern = group_name_pattern || `${plan.product_name} {n}`;
-            const participants = admin_number ? [`${admin_number}@s.whatsapp.net`] : [];
-            let orderStart = 0;
-
-            for (let n = 1; n <= group_count; n++) {
-                const groupName = namePattern.replace('{n}', String(n));
-                try {
-                    const res = await fetch(`${EVOLUTION_URL}/group/create/${instanceName}`, {
-                        method: 'POST',
-                        headers: { 'apikey': EVOLUTION_KEY, 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ subject: groupName, participants }),
-                    }).then(r => r.json()) as any;
-
-                    const jid = res?.id || res?.groupJid || res?.data?.id;
-                    if (jid) {
-                        await supabase.from('launch_groups').insert({
-                            campaign_id: campaign.id,
-                            group_jid: jid,
-                            group_name: groupName,
-                            order_index: orderStart + n - 1,
-                            is_active: n === 1,
-                        });
-                        groupsCreated++;
-                        log.push(`✅ Grupo criado: ${groupName}`);
-                        await new Promise(r => setTimeout(r, 1500));
-                    } else {
-                        log.push(`⚠️ Falha ao criar grupo ${groupName}: ${res?.message || 'No JID'}`);
-                    }
-                } catch (e: any) {
-                    log.push(`⚠️ Erro ao criar grupo ${groupName}: ${e.message}`);
-                }
-            }
-        }
-
-        // Step 3: Schedule all messages
-        const offerDate = new Date(plan.offer_date).getTime();
-        let scheduled = 0;
-
-        for (const msg of (plan.launch_plan_messages || [])) {
-            const scheduledAt = new Date(offerDate + msg.scheduled_offset_hours * 60 * 60 * 1000);
-
-            // Replace {{link_checkout}} with actual checkout url
-            let content = msg.content;
-            if (plan.checkout_url) content = content.replace(/\{\{link_checkout\}\}/g, plan.checkout_url);
-
-            const { data: dbMsg } = await supabase
-                .from('launch_messages')
+            const { data: campaign, error: ce } = await supabase
+                .from('launch_campaigns')
                 .insert({
-                    campaign_id: campaign.id,
-                    content_type: 'text',
-                    content,
-                    scheduled_at: scheduledAt.toISOString(),
-                    humanize: true,
+                    name: plan.product_name,
+                    instance_id: plan.instance_id,
+                    offer_date: plan.offer_date,
+                    overflow_limit,
+                    organization_id: req.user?.organization_id,
                 })
                 .select()
                 .single();
 
-            if (dbMsg) {
-                const delay = scheduledAt.getTime() - Date.now();
-                if (delay > 0) {
-                    await launchMessageQueue.add(
-                        'send-scheduled-message',
-                        { message_id: dbMsg.id, campaign_id: campaign.id },
-                        { delay, jobId: `plan-msg-${dbMsg.id}` }
-                    );
+            if (ce) return reply.code(500).send({ error: `Failed to create campaign: ${ce.message}`, log });
+            log.push(`✅ Campanha "Super Grupos" criada: ${campaign.id}`);
+
+            const instanceName = plan.instance?.name;
+            let groupsCreated = 0;
+
+            if (auto_create_groups && instanceName) {
+                if (!EVOLUTION_URL || !EVOLUTION_KEY) {
+                    return reply.code(500).send({ error: 'Evolution API configuration missing', log });
                 }
-                scheduled++;
+                const namePattern = group_name_pattern || `${plan.product_name} {n}`;
+                const participants = admin_number ? [`${admin_number}@s.whatsapp.net`] : [];
+
+                for (let n = 1; n <= group_count; n++) {
+                    const groupName = namePattern.replace('{n}', String(n));
+                    try {
+                        const res = await fetch(`${EVOLUTION_URL}/group/create/${instanceName}`, {
+                            method: 'POST',
+                            headers: { 'apikey': EVOLUTION_KEY, 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ subject: groupName, participants }),
+                        }).then(r => r.json()) as any;
+
+                        const jid = res?.id || res?.groupJid || res?.data?.id;
+                        if (jid) {
+                            await supabase.from('launch_groups').insert({
+                                campaign_id: campaign.id,
+                                group_jid: jid,
+                                group_name: groupName,
+                                order_index: n - 1,
+                                is_active: n === 1,
+                            });
+                            groupsCreated++;
+                            log.push(`✅ Grupo criado: ${groupName}`);
+                            await new Promise(r => setTimeout(r, 1500));
+                        } else {
+                            log.push(`⚠️ Falha ao criar grupo ${groupName}: ${res?.message || 'No JID'}`);
+                        }
+                    } catch (e: any) {
+                        log.push(`⚠️ Erro ao criar grupo ${groupName}: ${e.message}`);
+                    }
+                }
             }
-        }
 
-        log.push(`✅ ${scheduled} mensagens agendadas`);
+            const offerDate = new Date(plan.offer_date).getTime();
+            let scheduled = 0;
 
-        // Step 4: Update plan
-        await supabase.from('launch_plans').update({
-            campaign_id: campaign.id,
-            status: 'executing',
-            updated_at: new Date().toISOString(),
-        }).eq('id', id);
+            for (const msg of (plan.launch_plan_messages || [])) {
+                const scheduledAt = new Date(offerDate + msg.scheduled_offset_hours * 60 * 60 * 1000);
+                let content = msg.content;
+                if (plan.checkout_url) content = content.replace(/\{\{link_checkout\}\}/g, plan.checkout_url);
 
-        log.push('🚀 Lançamento em execução!');
+                const { data: dbMsg } = await supabase
+                    .from('launch_messages')
+                    .insert({
+                        campaign_id: campaign.id,
+                        content_type: 'text',
+                        content,
+                        scheduled_at: scheduledAt.toISOString(),
+                        humanize: true,
+                    })
+                    .select()
+                    .single();
 
-        return {
-            success: true,
-            campaign_id: campaign.id,
-            groups_created: groupsCreated,
-            messages_scheduled: scheduled,
-            log,
-        };
+                if (dbMsg) {
+                    const delay = scheduledAt.getTime() - Date.now();
+                    if (delay > 0) {
+                        await launchMessageQueue.add(
+                            'send-scheduled-message',
+                            { message_id: dbMsg.id, campaign_id: campaign.id },
+                            { delay, jobId: `plan-msg-${dbMsg.id}` }
+                        );
+                    }
+                    scheduled++;
+                }
+            }
+
+            log.push(`✅ ${scheduled} mensagens agendadas`);
+
+            await supabase.from('launch_plans').update({
+                campaign_id: campaign.id,
+                status: 'executing',
+                updated_at: new Date().toISOString(),
+            }).eq('id', id);
+
+            log.push('🚀 Lançamento em execução!');
+
+            return { success: true, campaign_id: campaign.id, groups_created: groupsCreated, messages_scheduled: scheduled, log };
         } catch (error: any) {
-             if (error instanceof z.ZodError) {
-                 return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
-             }
-             return reply.code(500).send({ error: error.message });
+            if (error instanceof z.ZodError) {
+                return reply.code(400).send({ error: 'Validation Error', details: error.issues });
+            }
+            return reply.code(500).send({ error: error.message });
         }
     });
 }

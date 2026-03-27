@@ -8,6 +8,7 @@ import { plannerRoutes } from './planner';
 import billingRoutes from './routes/billing';
 import strikesRoutes from './routes/strikes';
 import aiRoutes from './routes/ai';
+import teamRoutes from './routes/team';
 import instanceRoutes from './routes/instances';
 import { authenticate } from './middleware/auth';
 import type { AuthenticatedRequest } from './middleware/auth';
@@ -52,6 +53,7 @@ server.register(billingRoutes);
 server.register(strikesRoutes);
 // Register AI routes
 server.register(aiRoutes);
+server.register(teamRoutes);
 
 // Basic Webhook route to receive Evolution API payloads
 server.post('/webhooks/evolution', async (request) => {

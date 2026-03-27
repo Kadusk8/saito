@@ -80,9 +80,6 @@ export async function superGruposRoutes(
             // Defense in Depth: injecting organization_id explicitly if your schema supports it
             // Or relying on RLS if auth is passed properly via Supabase token.
             // Assuming RLS is active:
-            console.log('--- CREATE SUPER GROUP ---');
-            console.log('Body:', body);
-            console.log('User Org ID:', req.user?.organization_id);
 
             const { data: campaign, error: ce } = await supabase
                 .from('launch_campaigns')
@@ -97,10 +94,8 @@ export async function superGruposRoutes(
                 .single();
             
             if (ce) {
-                console.error('Supabase Error:', ce);
                 return reply.code(500).send({ error: ce.message });
             }
-            console.log('Campaign Created:', campaign.id);
 
             // Insert launch_groups
             if (groups && groups.length > 0) {
@@ -117,7 +112,7 @@ export async function superGruposRoutes(
             return reply.code(201).send(campaign);
         } catch (error: any) {
             if (error instanceof z.ZodError) {
-                return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
+                return reply.code(400).send({ error: 'Validation Error', details: (error as any).issues });
             }
             return reply.code(500).send({ error: error.message });
         }
@@ -146,7 +141,7 @@ export async function superGruposRoutes(
             return data;
         } catch (error: any) {
             if (error instanceof z.ZodError) {
-                return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
+                return reply.code(400).send({ error: 'Validation Error', details: (error as any).issues });
             }
             return reply.code(500).send({ error: error.message });
         }
@@ -251,7 +246,7 @@ export async function superGruposRoutes(
         return reply.send({ success: true, created, errors, total: created.length });
         } catch (error: any) {
             if (error instanceof z.ZodError) {
-                return reply.code(400).send({ error: 'Validation Error', details: (error as any).errors });
+                return reply.code(400).send({ error: 'Validation Error', details: (error as any).issues });
             }
             return reply.code(500).send({ error: error.message });
         }
@@ -324,8 +319,7 @@ export async function superGruposRoutes(
             .eq('organization_id', req.user?.organization_id)
             .single();
         
-        console.log('[INVITE-LINK] Campaign:', campaign);
-        if (ce) console.error('[INVITE-LINK] Campaign Error:', ce);
+        if (ce) server.log.error({ err: ce }, '[INVITE-LINK] Campaign fetch error');
         if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
 
         const { data: activeGroup, error: ae } = await supabase
@@ -335,8 +329,7 @@ export async function superGruposRoutes(
             .eq('is_active', true)
             .maybeSingle();
 
-        console.log('[INVITE-LINK] Active Group:', activeGroup);
-        if (ae) console.error('[INVITE-LINK] Active Group Error:', ae);
+        if (ae) server.log.error({ err: ae }, '[INVITE-LINK] Active group fetch error');
         if (!activeGroup) return reply.code(404).send({ error: 'No active group found' });
 
         try {
@@ -344,7 +337,6 @@ export async function superGruposRoutes(
             if (!baseUrl) return reply.code(500).send({ error: 'EVOLUTION_URL not configured' });
 
             const evoUrl = `${baseUrl}/group/inviteCode/${campaign.instance.name}?groupJid=${activeGroup.group_jid}`;
-            console.log(`[INVITE-LINK] Fetching invite code from: ${evoUrl}`);
             // Fetch real invite link from Evolution API
             const evoRes = await fetch(
                 evoUrl,
@@ -358,7 +350,6 @@ export async function superGruposRoutes(
             );
 
             const res = await evoRes.json() as any;
-            console.log('[INVITE-LINK] Evolution API Result:', res);
 
             let inviteLink = null;
             if (res?.inviteUrl) {
@@ -373,15 +364,14 @@ export async function superGruposRoutes(
             }
 
             if (inviteLink) {
-                console.log('[INVITE-LINK] Success! Link:', inviteLink);
                 await supabase.from('launch_groups').update({ invite_link: inviteLink }).eq('id', activeGroup.id);
             } else {
-                console.warn('[INVITE-LINK] Evolution API returned no code/url:', res);
+                server.log.warn({ res }, '[INVITE-LINK] Evolution API returned no invite link');
             }
 
             return { invite_link: inviteLink, active_group: activeGroup };
         } catch (e: any) {
-            console.error('[INVITE-LINK] Fatal Error:', e.message);
+            server.log.error({ err: e }, '[INVITE-LINK] Fatal error');
             return reply.code(500).send({ error: e.message });
         }
     });
@@ -411,7 +401,7 @@ export async function superGruposRoutes(
     });
 
     // Schedule a message
-    server.post('/api/super-grupos/:id/messages', async (req: AuthenticatedRequest, reply: any) => {
+    server.post('/api/super-grupos/:id/messages', { preHandler: [activeSubscriptionRequired] }, async (req: AuthenticatedRequest, reply: any) => {
         const { id } = req.params as { id: string };
         const { content_type, content, caption, media_url, scheduled_at, humanize } = req.body as any;
 
@@ -479,8 +469,7 @@ export async function superGruposRoutes(
             .eq('organization_id', req.user?.organization_id)
             .single();
         
-        console.log('[OPEN] Campaign:', campaign);
-        if (ce) console.error('[OPEN] Campaign Error:', ce);
+        if (ce) server.log.error({ err: ce }, '[OPEN] Campaign fetch error');
         if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
 
         const { data: groups } = await supabase
@@ -507,10 +496,9 @@ export async function superGruposRoutes(
                     body: JSON.stringify({ groupJid: g.group_jid, action: 'not_announcement' }),
                 });
                 const evoData = await evoRes.json();
-                console.log(`[OPEN] Evolution API Result for ${g.group_jid}:`, evoData);
                 return { jid: g.group_jid, opened: true, data: evoData };
             } catch (e: any) {
-                console.error(`[OPEN] Evolution API Fatal Error for ${g.group_jid}:`, e.message);
+                server.log.error({ err: e }, `[OPEN] Evolution API error for ${g.group_jid}`);
                 return { jid: g.group_jid, opened: false, error: e.message };
             }
         });
@@ -532,8 +520,7 @@ export async function superGruposRoutes(
             .eq('organization_id', req.user?.organization_id)
             .single();
         
-        console.log('[CLOSE] Campaign:', campaign);
-        if (ce) console.error('[CLOSE] Campaign Error:', ce);
+        if (ce) server.log.error({ err: ce }, '[CLOSE] Campaign fetch error');
         if (!campaign) return reply.code(404).send({ error: 'Campaign not found' });
 
         const { data: groups, error: ge } = await supabase
@@ -541,11 +528,9 @@ export async function superGruposRoutes(
             .select('group_jid')
             .eq('campaign_id', id);
 
-        console.log(`[CLOSE] Groups found: ${groups?.length}`);
-        if (ge) console.error('[CLOSE] Groups Error:', ge);
+        if (ge) server.log.error({ err: ge }, '[CLOSE] Groups fetch error');
 
         const instanceName = campaign.instance?.name;
-        console.log(`[CLOSE] Instance Name: ${instanceName}`);
 
         const EVOLUTION_URL = process.env.EVOLUTION_URL;
         const EVOLUTION_KEY = process.env.EVOLUTION_GLOBAL_KEY;
@@ -565,10 +550,9 @@ export async function superGruposRoutes(
                     body: JSON.stringify({ groupJid: g.group_jid, action: 'announcement' }),
                 });
                 const evoData = await evoRes.json();
-                console.log(`[CLOSE] Evolution API Result for ${g.group_jid}:`, evoData);
                 return { jid: g.group_jid, closed: true, data: evoData };
             } catch (e: any) {
-                console.error(`[CLOSE] Evolution API Fatal Error for ${g.group_jid}:`, e.message);
+                server.log.error({ err: e }, `[CLOSE] Evolution API error for ${g.group_jid}`);
                 return { jid: g.group_jid, closed: false, error: e.message };
             }
         });
@@ -707,7 +691,7 @@ export async function superGruposRoutes(
 
         // Verify instance name if provided in webhook (Gatekeeping)
         if (instance_name && activeGroup.campaign?.instance?.name !== instance_name) {
-            console.warn(`[OVERFLOW] Webhook instance mismatch: expected ${activeGroup.campaign?.instance?.name}, got ${instance_name}`);
+            server.log.warn(`[OVERFLOW] Webhook instance mismatch: expected ${activeGroup.campaign?.instance?.name}, got ${instance_name}`);
             return reply.code(403).send({ error: 'Instance mismatch' });
         }
 
