@@ -1,15 +1,20 @@
 'use client';
 
 import { useState } from 'react';
-import { Smartphone, Loader2, QrCode, X } from 'lucide-react';
+import { Smartphone, Loader2, QrCode, X, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '@/lib/api-client';
 
-export function ConnectInstanceModal() {
+interface Props {
+    onConnected?: () => void;
+}
+
+export function ConnectInstanceModal({ onConnected }: Props) {
     const [isOpen, setIsOpen] = useState(false);
     const [instanceName, setInstanceName] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [qrCodeBase64, setQrCodeBase64] = useState<string | null>(null);
+    const [connected, setConnected] = useState(false);
     const [error, setError] = useState('');
 
     const handleConnect = async () => {
@@ -42,13 +47,30 @@ export function ConnectInstanceModal() {
 
             if (qr) {
                 setQrCodeBase64(qr);
+                // Polling para detectar quando o QR foi escaneado
+                pollConnection(instanceName.trim());
             } else {
-                setError("O tempo limite foi excedido aguardando o QR Code (60 segundos). A API pode estar congestionada ou há um problema de conexão nos containers.");
+                setError("Tempo limite excedido aguardando o QR Code. Verifique a conexão dos containers.");
             }
         } catch (err: any) {
             setError(err.message);
         } finally {
             setIsLoading(false);
+        }
+    };
+
+    const pollConnection = async (name: string) => {
+        const maxAttempts = 30; // 60 segundos
+        for (let i = 0; i < maxAttempts; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+                const data = await api.get(`/api/instances/${name}/qrcode`);
+                if (data?.instance?.state === 'open' || data?.state === 'open') {
+                    setConnected(true);
+                    onConnected?.();
+                    return;
+                }
+            } catch { /* continua polling */ }
         }
     };
 
@@ -127,15 +149,21 @@ export function ConnectInstanceModal() {
                                 <p className="text-sm text-neutral-400 text-center">
                                     Aponte o celular e escaneie o QR Code dentro do WhatsApp (Aparelhos Conectados).
                                 </p>
+                                        {connected && (
+                                    <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
+                                        <CheckCircle2 className="w-5 h-5" /> WhatsApp conectado com sucesso!
+                                    </div>
+                                )}
                                 <button
                                     onClick={() => {
                                         setIsOpen(false);
                                         setQrCodeBase64(null);
+                                        setConnected(false);
                                         setInstanceName('');
                                     }}
                                     className="w-full mt-4 bg-surface-hover text-white py-2 rounded-xl text-sm font-medium border border-border hover:bg-white/5 transition-colors"
                                 >
-                                    Fechar Janela
+                                    {connected ? 'Fechar' : 'Fechar Janela'}
                                 </button>
                             </div>
                         )}

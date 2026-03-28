@@ -1,29 +1,48 @@
-import { Smartphone, CheckCircle2, AlertCircle } from 'lucide-react';
+'use client';
+
+import { useState, useEffect, useCallback } from 'react';
+import { Smartphone, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 import Link from 'next/link';
 import { ConnectInstanceModal } from '@/components/ConnectInstanceModal';
 import { DeleteInstanceButton } from '@/components/DeleteInstanceButton';
+import { createBrowserClient } from '@supabase/ssr';
 
-export default async function GroupsPage() {
-    let instances: any[] = [];
+export default function GroupsPage() {
+    const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
 
-    try {
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://127.0.0.1:3001';
-        const res = await fetch(`${apiUrl}/api/instances`, { cache: 'no-store' });
-        const json = await res.json();
-        if (json.success) {
-            instances = json.data || [];
+    const [instances, setInstances] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+
+    const fetchInstances = useCallback(async (silent = false) => {
+        if (!silent) setLoading(true);
+        else setRefreshing(true);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+            const res = await fetch(`${API}/api/instances`, {
+                headers: { 'Authorization': `Bearer ${session?.access_token}` },
+                cache: 'no-store',
+            });
+            const json = await res.json();
+            if (json.success) setInstances(json.data || []);
+        } catch (e) {
+            console.error('Failed to fetch instances', e);
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
         }
+    }, [supabase]);
 
-    } catch (e) {
-        console.error("Failed to fetch data", e);
-    }
+    useEffect(() => { fetchInstances(); }, [fetchInstances]);
 
     return (
         <div className="p-8 pb-20 sm:p-12 w-full max-w-7xl mx-auto space-y-10 relative">
-            {/* Ambient Background Glow */}
             <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-brand/5 blur-[120px] rounded-full pointer-events-none -z-10" />
 
-            {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 relative z-50 glass p-8 rounded-3xl border border-border-subtle shadow-premium bg-surface/40">
                 <div className="flex flex-col gap-3">
                     <div className="flex items-center gap-3 mb-2">
@@ -32,14 +51,21 @@ export default async function GroupsPage() {
                         </div>
                         <h1 className="text-3xl font-extrabold tracking-tight text-white">Dispositivos Conectados</h1>
                     </div>
-                    <p className="text-foreground-muted font-medium ml-1">Gerencie suas conexões de WhatsApp e configure novos aparelhos para transbordo e envios.</p>
+                    <p className="text-foreground-muted font-medium ml-1">Gerencie suas conexões de WhatsApp e configure novos aparelhos.</p>
                 </div>
-                <div className="shrink-0">
-                    <ConnectInstanceModal />
+                <div className="flex items-center gap-3 shrink-0">
+                    <button
+                        onClick={() => fetchInstances(true)}
+                        disabled={refreshing}
+                        className="p-2.5 bg-surface border border-border-subtle hover:border-white/20 rounded-xl text-neutral-400 hover:text-white transition-all"
+                        title="Atualizar"
+                    >
+                        <RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} />
+                    </button>
+                    <ConnectInstanceModal onConnected={() => fetchInstances(true)} />
                 </div>
             </div>
 
-            {/* Instâncias list */}
             <div className="space-y-6 relative z-10">
                 <div className="flex items-center justify-between">
                     <h2 className="text-lg font-bold text-white tracking-tight">Instâncias Ativas</h2>
@@ -48,14 +74,19 @@ export default async function GroupsPage() {
                     </span>
                 </div>
 
-                {instances.length === 0 ? (
+                {loading ? (
+                    <div className="glass border border-border-subtle rounded-3xl p-16 text-center flex flex-col items-center gap-4">
+                        <Smartphone className="w-10 h-10 text-brand animate-pulse" />
+                        <p className="text-foreground-muted font-medium">Carregando instâncias...</p>
+                    </div>
+                ) : instances.length === 0 ? (
                     <div className="glass border border-dashed border-border-subtle rounded-3xl p-16 text-center flex flex-col items-center justify-center gap-4 bg-surface/30">
                         <div className="w-16 h-16 rounded-full bg-surface border border-border flex items-center justify-center text-neutral-600 mb-2">
                             <Smartphone className="w-8 h-8 opacity-50" />
                         </div>
                         <div>
                             <p className="text-white font-semibold text-lg">Nenhum dispositivo encontrado</p>
-                            <p className="text-foreground-muted text-sm mt-1">Conecte um novo número de WhatsApp para começar a gerenciar seus grupos.</p>
+                            <p className="text-foreground-muted text-sm mt-1">Conecte um novo número de WhatsApp para começar.</p>
                         </div>
                     </div>
                 ) : (
@@ -65,7 +96,6 @@ export default async function GroupsPage() {
                             return (
                                 <div key={instance.id || instance.name} className="glass border border-border-subtle rounded-2xl p-6 flex flex-col lg:flex-row items-center justify-between gap-6 hover:border-brand/40 hover:bg-surface/60 transition-all shadow-sm group">
                                     <div className="flex w-full lg:w-auto items-center gap-5">
-                                        {/* Avatar area */}
                                         <div className="relative shrink-0">
                                             {instance.profilePicUrl ? (
                                                 <div className="w-16 h-16 rounded-2xl overflow-hidden border border-border shadow-sm group-hover:border-brand/50 transition-colors">
@@ -76,25 +106,22 @@ export default async function GroupsPage() {
                                                     <Smartphone className="w-8 h-8" />
                                                 </div>
                                             )}
-                                            {/* Status Dot Ring */}
                                             <div className="absolute -bottom-1 -right-1 p-1 bg-surface rounded-full">
                                                 <div className={`w-3.5 h-3.5 rounded-full border-2 border-surface ${isConnected ? 'bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]' : 'bg-red-400 shadow-[0_0_10px_rgba(248,113,113,0.6)]'}`} />
                                             </div>
                                         </div>
 
-                                        {/* Info */}
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2 mb-1">
                                                 <h3 className="text-white font-bold text-lg truncate">
                                                     {instance.profileName || instance.name}
                                                 </h3>
                                                 {instance.ownerJid && (
-                                                    <span className="text-xs font-medium text-foreground-muted bg-surface-hover px-2 py-0.5 rounded-md border border-border/50 truncate max-w-[120px]">
+                                                    <span className="text-xs font-medium text-foreground-muted bg-surface-hover px-2 py-0.5 rounded-md border border-border/50">
                                                         {instance.ownerJid.split('@')[0]}
                                                     </span>
                                                 )}
                                             </div>
-                                            
                                             <div className="flex items-center gap-2 text-sm">
                                                 {isConnected ? (
                                                     <span className="flex items-center gap-1.5 text-emerald-400 font-medium">
@@ -108,8 +135,7 @@ export default async function GroupsPage() {
                                             </div>
                                         </div>
                                     </div>
-                                    
-                                    {/* Action Buttons */}
+
                                     <div className="flex w-full lg:w-auto items-center gap-3 self-end lg:self-center shrink-0">
                                         <Link href={`/dashboard/instances/${instance.name}/groups`} className="px-5 py-2.5 bg-surface border border-border hover:border-brand/50 rounded-xl text-sm font-semibold text-white hover:bg-brand-light transition-all shadow-sm flex items-center gap-2 flex-1 justify-center">
                                             Gerenciar Grupos

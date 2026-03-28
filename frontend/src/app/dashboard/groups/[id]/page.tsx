@@ -10,7 +10,10 @@ import {
     MessageCircleOff,
     Users,
     Loader2,
-    CheckCircle2
+    CheckCircle2,
+    Mic,
+    Sticker,
+    Video,
 } from 'lucide-react';
 import Link from 'next/link';
 import { Switch } from '@/components/ui/switch';
@@ -100,25 +103,35 @@ export default function GroupSettingsPage({ params }: { params: Promise<{ id: st
         setIsSaving(true);
         setSaveStatus('idle');
 
-        // Parse blacklist back to array
-        const blacklistArray = blacklistText.split(',').map(s => s.trim()).filter(Boolean);
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+            const blacklistArray = blacklistText.split(',').map(s => s.trim()).filter(Boolean);
 
-        const { error } = await supabase
-            .from('groups')
-            .update({
-                rules: { ...rules, topic: topicText },
-                blacklist: blacklistArray
-            })
-            .eq('id', groupId);
+            const res = await fetch(`${API}/api/groups/${groupId}/rules`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${session?.access_token}`,
+                },
+                body: JSON.stringify({
+                    rules: { ...rules, topic: topicText },
+                    blacklist: blacklistArray,
+                }),
+            });
 
-        setIsSaving(false);
+            if (!res.ok) {
+                const json = await res.json();
+                throw new Error(json.error || 'Falha ao salvar');
+            }
 
-        if (error) {
-            console.error("Failed to save rules:", error);
-            setSaveStatus('error');
-        } else {
             setSaveStatus('success');
             setTimeout(() => setSaveStatus('idle'), 3000);
+        } catch (err: any) {
+            console.error('Failed to save rules:', err);
+            setSaveStatus('error');
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -182,108 +195,89 @@ export default function GroupSettingsPage({ params }: { params: Promise<{ id: st
                 <div className="py-6 space-y-6">
                     <h3 className="text-sm font-medium text-brand tracking-wider uppercase">Filtros de Mídia e Links</h3>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="flex items-start justify-between p-4 rounded-xl border border-border/50 bg-background/50 hover:bg-surface-hover transition-colors">
-                            <div className="flex gap-3">
-                                <LinkIcon className="w-5 h-5 text-neutral-400 mt-0.5" />
-                                <div>
-                                    <h4 className="text-white font-medium text-sm">Bloquear Links URL</h4>
-                                    <p className="text-neutral-500 text-xs mt-1">Impede qualquer membro de enviar `http://`</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {[
+                            { key: 'blockLinks', icon: LinkIcon, label: 'Bloquear Links URL', desc: 'Impede qualquer membro de enviar http://' },
+                            { key: 'blockImage', icon: ImageIcon, label: 'Bloquear Imagens', desc: 'Remove imagens enviadas por membros.' },
+                            { key: 'blockVideo', icon: Video, label: 'Bloquear Vídeos', desc: 'Remove vídeos enviados por membros.' },
+                            { key: 'blockAudio', icon: Mic, label: 'Bloquear Áudios', desc: 'Remove mensagens de voz enviadas.' },
+                            { key: 'blockSticker', icon: Sticker, label: 'Bloquear Figurinhas', desc: 'Remove stickers enviados por membros.' },
+                            { key: 'floodControl', icon: MessageCircleOff, label: 'Anti-Flood', desc: 'Strike em quem envia +5 msgs em 10 segundos.' },
+                            { key: 'panfleteiroAlert', icon: ShieldAlert, label: 'Alerta de Panfleteiro', desc: 'Notifica admins sobre envio massivo de links.' },
+                        ].map(({ key, icon: Icon, label, desc }) => (
+                            <div key={key} className="flex items-start justify-between p-4 rounded-xl border border-border/50 bg-background/50 hover:bg-surface-hover transition-colors">
+                                <div className="flex gap-3">
+                                    <Icon className="w-5 h-5 text-neutral-400 mt-0.5 shrink-0" />
+                                    <div>
+                                        <h4 className="text-white font-medium text-sm">{label}</h4>
+                                        <p className="text-neutral-500 text-xs mt-1">{desc}</p>
+                                    </div>
                                 </div>
+                                <Switch checked={rules[key as keyof typeof rules] as boolean} onCheckedChange={() => toggleRule(key as keyof typeof rules)} />
                             </div>
-                            <Switch checked={rules.blockLinks} onCheckedChange={() => toggleRule('blockLinks')} />
-                        </div>
-
-                        <div className="flex items-start justify-between p-4 rounded-xl border border-border/50 bg-background/50 hover:bg-surface-hover transition-colors">
-                            <div className="flex gap-3">
-                                <ImageIcon className="w-5 h-5 text-neutral-400 mt-0.5" />
-                                <div>
-                                    <h4 className="text-white font-medium text-sm">Bloquear Imagens e Vídeos</h4>
-                                    <p className="text-neutral-500 text-xs mt-1">Apenas texto e áudio serão permitidos.</p>
-                                </div>
-                            </div>
-                            <Switch checked={rules.blockImage} onCheckedChange={() => toggleRule('blockImage')} />
-                        </div>
-
-                        <div className="flex items-start justify-between p-4 rounded-xl border border-border/50 bg-background/50 hover:bg-surface-hover transition-colors">
-                            <div className="flex gap-3">
-                                <MessageCircleOff className="w-5 h-5 text-neutral-400 mt-0.5" />
-                                <div>
-                                    <h4 className="text-white font-medium text-sm">Controle Anti-Flood</h4>
-                                    <p className="text-neutral-500 text-xs mt-1">Silencia quem envia +5 mensagens seguidas em 10s.</p>
-                                </div>
-                            </div>
-                            <Switch checked={rules.floodControl} onCheckedChange={() => toggleRule('floodControl')} />
-                        </div>
-
-                        <div className="flex items-start justify-between p-4 rounded-xl border border-border/50 bg-background/50 hover:bg-surface-hover transition-colors">
-                            <div className="flex gap-3">
-                                <ShieldAlert className="w-5 h-5 text-amber-500 mt-0.5" />
-                                <div>
-                                    <h4 className="text-white font-medium text-sm">Alerta de Panfleteiro</h4>
-                                    <p className="text-neutral-500 text-xs mt-1">Notifica admins sobre comportamentos típicos de spam.</p>
-                                </div>
-                            </div>
-                            <Switch checked={rules.panfleteiroAlert} onCheckedChange={() => toggleRule('panfleteiroAlert')} />
-                        </div>
+                        ))}
                     </div>
                 </div>
 
-                <div className="py-6 border-t border-border space-y-6">
+                <div className="py-6 border-t border-border space-y-4">
                     <h3 className="text-sm font-medium text-brand tracking-wider uppercase flex items-center gap-2">
                         <Bot className="w-4 h-4" /> Inteligência Artificial
                     </h3>
 
-                        <div className="flex items-start justify-between p-4 rounded-xl border border-border/50 bg-background/50 hover:bg-surface-hover transition-colors">
+                    {/* Enforce Topic */}
+                    <div className="rounded-xl border border-border/50 bg-background/50 overflow-hidden">
+                        <div className="flex items-start justify-between p-4 hover:bg-surface-hover transition-colors">
                             <div className="flex gap-3">
-                                <Bot className="w-5 h-5 text-brand mt-0.5" />
+                                <Bot className="w-5 h-5 text-brand mt-0.5 shrink-0" />
                                 <div>
                                     <h4 className="text-white font-medium text-sm">Controle de Assunto (IA)</h4>
-                                    <p className="text-neutral-500 text-xs mt-1">Garante que o grupo foque apenas no tema definido abaixo.</p>
+                                    <p className="text-neutral-500 text-xs mt-1">Deleta mensagens fora do tópico definido abaixo.</p>
                                 </div>
                             </div>
                             <Switch checked={rules.enforceTopic} onCheckedChange={() => toggleRule('enforceTopic')} />
                         </div>
+                        {rules.enforceTopic && (
+                            <div className="px-4 pb-4 space-y-2 border-t border-border/30 pt-4">
+                                <label className="text-xs text-neutral-400 font-medium">Tópico Oficial do Grupo:</label>
+                                <textarea
+                                    value={topicText}
+                                    onChange={(e) => setTopicText(e.target.value)}
+                                    className="w-full bg-surface border border-border rounded-lg p-3 text-sm text-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand resize-none"
+                                    rows={2}
+                                    placeholder="ex: Dúvidas sobre o Curso de Culinária do Chef Silas"
+                                />
+                                <p className="text-[11px] text-neutral-500">A IA usará este texto para determinar o que é off-topic.</p>
+                            </div>
+                        )}
+                    </div>
 
-                        <div className="flex items-start justify-between p-4 rounded-xl border border-border/50 bg-background/50 hover:bg-surface-hover transition-colors">
+                    {/* AI Blacklist */}
+                    <div className="rounded-xl border border-border/50 bg-background/50 overflow-hidden">
+                        <div className="flex items-start justify-between p-4 hover:bg-surface-hover transition-colors">
                             <div className="flex gap-3">
-                                <Bot className="w-5 h-5 text-brand mt-0.5" />
+                                <Bot className="w-5 h-5 text-brand mt-0.5 shrink-0" />
                                 <div>
-                                    <h4 className="text-white font-medium text-sm">Blacklist Dinâmica</h4>
-                                    <p className="text-neutral-500 text-xs mt-1 max-w-md">Interpreta mensagens para barrar termos maliciósos mesmo disfarçados.</p>
-
-                                    {rules.enforceTopic && (
-                                        <div className="mt-4 space-y-2">
-                                            <label className="text-xs text-neutral-400 font-medium">Tópico Oficial do Grupo (IA):</label>
-                                            <textarea
-                                                value={topicText}
-                                                onChange={(e) => setTopicText(e.target.value)}
-                                                className="w-full bg-surface border border-border rounded-lg p-3 text-sm text-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand resize-none"
-                                                rows={2}
-                                                placeholder="ex: Dúvidas sobre o Curso de Culinária do Chef Silas"
-                                            />
-                                            <p className="text-[11px] text-neutral-500">A IA usará este texto para determinar o que é "off-topic".</p>
-                                        </div>
-                                    )}
-
-                                    {rules.aiBlacklist && (
-                                        <div className="mt-4 space-y-2">
-                                            <label className="text-xs text-neutral-400 font-medium">Lista de Termos Proibidos (Blacklist):</label>
-                                            <textarea
-                                                value={blacklistText}
-                                                onChange={(e) => setBlacklistText(e.target.value)}
-                                                className="w-full bg-surface border border-border rounded-lg p-3 text-sm text-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand resize-none"
-                                                rows={2}
-                                                placeholder="ex: vendas, golpe, afiliados, pirâmide"
-                                            />
-                                            <p className="text-[11px] text-neutral-500">Separe os termos por vírgula. A IA fará a análise semântica.</p>
-                                        </div>
-                                    )}
+                                    <h4 className="text-white font-medium text-sm">Blacklist Dinâmica (IA)</h4>
+                                    <p className="text-neutral-500 text-xs mt-1">Barra termos maliciosos mesmo quando disfarçados.</p>
                                 </div>
                             </div>
                             <Switch checked={rules.aiBlacklist} onCheckedChange={() => toggleRule('aiBlacklist')} />
                         </div>
+                        {rules.aiBlacklist && (
+                            <div className="px-4 pb-4 space-y-2 border-t border-border/30 pt-4">
+                                <label className="text-xs text-neutral-400 font-medium">Termos Proibidos:</label>
+                                <textarea
+                                    value={blacklistText}
+                                    onChange={(e) => setBlacklistText(e.target.value)}
+                                    className="w-full bg-surface border border-border rounded-lg p-3 text-sm text-white focus:outline-none focus:border-brand focus:ring-1 focus:ring-brand resize-none"
+                                    rows={2}
+                                    placeholder="ex: vendas, golpe, afiliados, pirâmide"
+                                />
+                                <p className="text-[11px] text-neutral-500">Separe os termos por vírgula. A IA fará a análise semântica.</p>
+                            </div>
+                        )}
                     </div>
+                </div>
                 </div>
             )}
 
