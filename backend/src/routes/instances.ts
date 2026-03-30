@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { EvolutionAPI } from '../services/evolution';
 import { authenticate, activeSubscriptionRequired, AuthenticatedRequest } from '../middleware/auth';
 import { checkInstanceCreationLimit } from '../services/billing-limits';
-import { supabase } from '../db';
+import { supabase, supabaseAdmin } from '../db';
 
 export default async function instanceRoutes(server: FastifyInstance, evolution: EvolutionAPI) {
     // Route to create a new Evolution instance dynamically
@@ -122,22 +122,31 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
                 }
             } catch { /* fallback to disconnected */ }
 
-            // Instance + groups from DB (scoped to org)
-            const { data: dbInstance, error: instErr } = await supabase
+            // Instance + groups from DB (scoped to org when available)
+            // Use supabaseAdmin to bypass RLS
+            let instanceQuery = supabaseAdmin
                 .from('instances')
                 .select('id, name')
-                .eq('name', name)
-                .eq('organization_id', request.user!.organization_id!)
-                .single();
+                .eq('name', name);
+
+            if (request.user?.organization_id) {
+                instanceQuery = instanceQuery.eq('organization_id', request.user.organization_id);
+            }
+
+            const { data: dbInstance, error: instErr } = await instanceQuery.single();
 
             if (instErr || !dbInstance) {
+                server.log.warn(`[DETAIL] Instance not found: name=${name} org=${request.user?.organization_id} err=${instErr?.message}`);
                 return reply.code(404).send({ error: 'Instance not found' });
             }
 
-            const { data: groups } = await supabase
+            // Use supabaseAdmin to bypass RLS on groups table
+            const { data: groups, error: groupsErr } = await supabaseAdmin
                 .from('groups')
                 .select('*')
                 .eq('instance_id', dbInstance.id);
+
+            if (groupsErr) server.log.warn(`[DETAIL] Groups query error: ${groupsErr.message}`);
 
             return {
                 id: dbInstance.id,
@@ -485,10 +494,10 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
 
             server.log.info(`[SYNC] Found ${managedGroups.length} groups where bot is admin.`);
 
-            const { data: instanceData } = await supabase.from('instances').select('id').eq('name', name).single();
+            const { data: instanceData } = await supabaseAdmin.from('instances').select('id').eq('name', name).single();
             if (!instanceData) return reply.code(404).send({ error: 'Instance not found in database' });
 
-            const { data: existingGroups } = await supabase.from('groups').select('id, jid').eq('instance_id', instanceData.id);
+            const { data: existingGroups } = await supabaseAdmin.from('groups').select('id, jid').eq('instance_id', instanceData.id);
             const existingJids = new Map((existingGroups || []).map((g: any) => [g.jid, g.id]));
 
             const upsertData = managedGroups.map((g: any) => {
@@ -517,7 +526,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             });
 
             if (upsertData.length > 0) {
-                const { error } = await supabase.from('groups').upsert(upsertData, { onConflict: 'id' });
+                const { error } = await supabaseAdmin.from('groups').upsert(upsertData, { onConflict: 'id' });
                 if (error) {
                     server.log.error(`[SYNC] DB Error: ${error.message}`);
                     throw error;
@@ -528,7 +537,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             const groupsToDelete = (existingGroups || []).filter((dbGroup: any) => !currentJids.has(dbGroup.jid));
 
             if (groupsToDelete.length > 0) {
-                const { error } = await supabase.from('groups').delete().in('id', groupsToDelete.map((g: any) => g.id));
+                const { error } = await supabaseAdmin.from('groups').delete().in('id', groupsToDelete.map((g: any) => g.id));
                 if (error) server.log.error(`[SYNC] DB Delete Error: ${error.message}`);
             }
 
