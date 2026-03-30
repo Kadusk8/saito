@@ -450,6 +450,20 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
         }
     });
 
+    // Route to reconfigure webhook for an existing instance
+    server.post('/api/instances/:name/reconfigure-webhook', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
+        try {
+            const { name } = request.params as { name: string };
+            const webhookUrl = process.env.WEBHOOK_URL || 'http://host.docker.internal:3001/webhooks/evolution';
+            await evolution.setWebhook(name, webhookUrl);
+            server.log.info(`[WEBHOOK] Reconfigured webhook for ${name} → ${webhookUrl}`);
+            return { success: true, webhookUrl };
+        } catch (error: any) {
+            server.log.error(`[WEBHOOK] Failed to reconfigure: ${error.message}`);
+            return reply.code(500).send({ error: error.message });
+        }
+    });
+
     // Route to sync groups for a given instance
     server.post('/api/instances/:name/groups/sync', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         try {
@@ -483,30 +497,46 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             }
 
             const botId = botJid.split('@')[0];
-            // Determine admin status per group using participants (if available)
-            const adminCount = groups.filter((g: any) => {
-                const participants = g.participants || [];
-                const botP = participants.find((p: any) => (p.id || p.phoneNumber || '').split('@')[0] === botId);
-                return botP?.admin === 'admin' || botP?.admin === 'superadmin' || botP?.admin === true;
-            }).length;
-
-            // Sync ALL groups the instance can see (participants array may be empty in some Evolution versions)
-            const memberGroups = groups;
-
-            server.log.info(`[SYNC] Found ${memberGroups.length} groups (${adminCount} with admin role detected).`);
+            server.log.info(`[SYNC] Bot ID: ${botId}, fetching participants per group to detect admin status`);
 
             const { data: instanceData } = await supabaseAdmin.from('instances').select('id').eq('name', name).single();
             if (!instanceData) return reply.code(404).send({ error: 'Instance not found in database' });
 
-            const { data: existingGroups } = await supabaseAdmin.from('groups').select('id, jid, settings').eq('instance_id', instanceData.id);
+            const { data: existingGroups } = await supabaseAdmin.from('groups').select('id, jid, settings, rules').eq('instance_id', instanceData.id);
             const existingMap = new Map((existingGroups || []).map((g: any) => [g.jid, g]));
 
-            const upsertData = memberGroups.map((g: any) => {
+            // Fetch participants per group to accurately detect admin status
+            // Evolution API's fetchAllGroups doesn't reliably return participants
+            const upsertData: any[] = [];
+            let adminCount = 0;
+
+            for (const g of groups) {
                 const existing = existingMap.get(g.id);
-                const participants = g.participants || [];
-                const botP = participants.find((p: any) => (p.id || p.phoneNumber || '').split('@')[0] === botId);
-                // isAdmin only reliable when participants array is populated
-                const isAdmin = botP ? (botP.admin === 'admin' || botP.admin === 'superadmin' || botP.admin === true) : false;
+
+                // First try participants from fetchAllGroups response
+                let participants = g.participants || [];
+                let isAdmin = false;
+
+                if (participants.length > 0) {
+                    const botP = participants.find((p: any) => (p.id || p.phoneNumber || '').split('@')[0] === botId);
+                    isAdmin = botP?.admin === 'admin' || botP?.admin === 'superadmin' || botP?.admin === true;
+                } else {
+                    // Fallback: fetch participants individually
+                    try {
+                        const partRes = await evolution.fetchGroupParticipants(name, g.id);
+                        const partArray: any[] = Array.isArray(partRes)
+                            ? partRes
+                            : (partRes as any)?.participants ?? [];
+                        const botP = partArray.find((p: any) =>
+                            (p.id || p.jid || '').split('@')[0] === botId
+                        );
+                        isAdmin = botP?.admin === 'admin' || botP?.admin === 'superadmin' || botP?.admin === true;
+                    } catch {
+                        // Keep isAdmin = false if endpoint fails
+                    }
+                }
+
+                if (isAdmin) adminCount++;
 
                 const record: Record<string, any> = {
                     id: existing?.id || crypto.randomUUID(),
@@ -514,8 +544,9 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
                     jid: g.id,
                     name: g.subject || g.name || 'Grupo Sem Nome',
                     settings: { ...(existing?.settings || {}), is_admin: isAdmin },
-                    blacklist: []
+                    blacklist: existing?.blacklist || []
                 };
+
                 if (!existing) {
                     record.rules = {
                         blockAudio: false,
@@ -527,9 +558,13 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
                         floodControl: true,
                         moderationEnabled: false
                     };
+                } else {
+                    // Preserve existing rules — only update settings (is_admin)
+                    record.rules = existing.rules;
                 }
-                return record;
-            });
+
+                upsertData.push(record);
+            }
 
             if (upsertData.length > 0) {
                 const { error } = await supabaseAdmin.from('groups').upsert(upsertData, { onConflict: 'id' });
@@ -539,18 +574,21 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
                 }
             }
 
-            const currentJids = new Set(memberGroups.map((g: any) => g.id));
+            const currentJids = new Set(groups.map((g: any) => g.id));
             const groupsToDelete = (existingGroups || []).filter((dbGroup: any) => !currentJids.has(dbGroup.jid));
 
             if (groupsToDelete.length > 0) {
-                const { error } = await supabaseAdmin.from('groups').delete().in('id', groupsToDelete.map((g: any) => g.id));
-                if (error) server.log.error(`[SYNC] DB Delete Error: ${error.message}`);
+                await supabaseAdmin.from('groups').delete().in('id', groupsToDelete.map((g: any) => g.id));
             }
+
+            server.log.info(`[SYNC] Done: ${upsertData.length} groups (${adminCount} admin, ${upsertData.length - adminCount} member)`);
 
             return {
                 success: true,
-                message: `Sincronizados ${upsertData.length} grupos (${adminCount} como admin, ${upsertData.length - adminCount} como membro).`,
-                count: upsertData.length
+                message: `Sincronizados ${upsertData.length} grupos: ${adminCount} como admin, ${upsertData.length - adminCount} como membro.`,
+                count: upsertData.length,
+                adminCount,
+                memberCount: upsertData.length - adminCount
             };
         } catch (error: any) {
             server.log.error(`[SYNC] Fatal Error: ${error.message}`);

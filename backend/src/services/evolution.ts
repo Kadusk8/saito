@@ -74,6 +74,10 @@ export class EvolutionAPI {
         return this.request(`/group/fetchAllGroups/${instanceName}?getParticipants=true`, 'GET');
     }
 
+    async fetchGroupParticipants(instanceName: string, groupJid: string) {
+        return this.request(`/group/participants/${instanceName}?groupJid=${encodeURIComponent(groupJid)}`, 'GET');
+    }
+
     // --- Instance Management ---
 
     async createInstance(instanceName: string) {
