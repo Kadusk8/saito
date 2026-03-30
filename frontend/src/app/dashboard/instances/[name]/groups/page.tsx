@@ -121,9 +121,12 @@ export default function InstanceGroupsPage({ params }: { params: Promise<{ name:
                                     </div>
                                 </div>
 
-                                {/* Moderation Toggle Indicator */}
-                                <div className="shrink-0 flex flex-col items-end gap-1">
-                                    <span className="text-[10px] uppercase font-bold text-neutral-500 tracking-wider">Moderação</span>
+                                {/* Admin/Member badge + Moderation */}
+                                <div className="shrink-0 flex flex-col items-end gap-2">
+                                    {group.settings?.is_admin
+                                        ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Admin</span>
+                                        : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-400 border border-neutral-700">Membro</span>
+                                    }
                                     <div className={`w-10 h-6 rounded-full flex items-center p-1 transition-colors border shadow-inner ${group.rules?.moderationEnabled ? 'bg-brand border-brand/50' : 'bg-surface border-border-subtle'}`}>
                                         <div className={`w-4 h-4 rounded-full transition-transform shadow-sm ${group.rules?.moderationEnabled ? 'bg-white translate-x-4' : 'bg-neutral-500 translate-x-0'}`} />
                                     </div>

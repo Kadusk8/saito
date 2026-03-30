@@ -482,37 +482,41 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
 
             const botId = botJid.split('@')[0];
 
-            const managedGroups = groups.filter((g: any) => {
+            // Sync ALL groups where bot is a member (admin or not)
+            const memberGroups = groups.filter((g: any) => {
                 const participants = g.participants || [];
-                const botParticipant = participants.find((p: any) => {
-                    const pId = (p.id || p.phoneNumber || '').split('@')[0];
-                    return pId === botId;
-                });
-                if (!botParticipant) return false;
-                return botParticipant.admin === 'admin' ||
-                    botParticipant.admin === 'superadmin' ||
-                    botParticipant.admin === true;
+                return participants.some((p: any) => (p.id || p.phoneNumber || '').split('@')[0] === botId);
             });
 
-            server.log.info(`[SYNC] Found ${managedGroups.length} groups where bot is admin.`);
+            const adminCount = memberGroups.filter((g: any) => {
+                const participants = g.participants || [];
+                const botP = participants.find((p: any) => (p.id || p.phoneNumber || '').split('@')[0] === botId);
+                return botP?.admin === 'admin' || botP?.admin === 'superadmin' || botP?.admin === true;
+            }).length;
+
+            server.log.info(`[SYNC] Found ${memberGroups.length} groups (${adminCount} admin, ${memberGroups.length - adminCount} member).`);
 
             const { data: instanceData } = await supabaseAdmin.from('instances').select('id').eq('name', name).single();
             if (!instanceData) return reply.code(404).send({ error: 'Instance not found in database' });
 
-            const { data: existingGroups } = await supabaseAdmin.from('groups').select('id, jid').eq('instance_id', instanceData.id);
-            const existingJids = new Map((existingGroups || []).map((g: any) => [g.jid, g.id]));
+            const { data: existingGroups } = await supabaseAdmin.from('groups').select('id, jid, settings').eq('instance_id', instanceData.id);
+            const existingMap = new Map((existingGroups || []).map((g: any) => [g.jid, g]));
 
-            const upsertData = managedGroups.map((g: any) => {
-                const existingId = existingJids.get(g.id);
+            const upsertData = memberGroups.map((g: any) => {
+                const existing = existingMap.get(g.id);
+                const participants = g.participants || [];
+                const botP = participants.find((p: any) => (p.id || p.phoneNumber || '').split('@')[0] === botId);
+                const isAdmin = botP?.admin === 'admin' || botP?.admin === 'superadmin' || botP?.admin === true;
+
                 const record: Record<string, any> = {
-                    id: existingId || crypto.randomUUID(),
+                    id: existing?.id || crypto.randomUUID(),
                     instance_id: instanceData.id,
                     jid: g.id,
                     name: g.subject || g.name || 'Grupo Sem Nome',
-                    settings: {},
+                    settings: { ...(existing?.settings || {}), is_admin: isAdmin },
                     blacklist: []
                 };
-                if (!existingId) {
+                if (!existing) {
                     record.rules = {
                         blockAudio: false,
                         blockImage: false,
@@ -535,7 +539,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
                 }
             }
 
-            const currentJids = new Set(managedGroups.map((g: any) => g.id));
+            const currentJids = new Set(memberGroups.map((g: any) => g.id));
             const groupsToDelete = (existingGroups || []).filter((dbGroup: any) => !currentJids.has(dbGroup.jid));
 
             if (groupsToDelete.length > 0) {
@@ -545,7 +549,7 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
 
             return {
                 success: true,
-                message: `Sincronizados ${upsertData.length} grupos onde você é administrador.`,
+                message: `Sincronizados ${upsertData.length} grupos (${adminCount} como admin, ${upsertData.length - adminCount} como membro).`,
                 count: upsertData.length
             };
         } catch (error: any) {
