@@ -458,7 +458,10 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             server.log.info(`[SYNC] Starting sync for instance: ${name}`);
 
             const groupsResponse = await evolution.fetchAllGroups(name);
-            const groups = Array.isArray(groupsResponse) ? groupsResponse : (groupsResponse as any)?.data || [];
+            server.log.info({ isArray: Array.isArray(groupsResponse), keys: groupsResponse && typeof groupsResponse === 'object' ? Object.keys(groupsResponse as any).slice(0, 5) : [] }, '[SYNC] Raw response type');
+            const groups = Array.isArray(groupsResponse)
+                ? groupsResponse
+                : (groupsResponse as any)?.groups ?? (groupsResponse as any)?.data ?? [];
 
             server.log.info(`[SYNC] Evolution API returned ${groups.length} total groups for ${name}`);
 
