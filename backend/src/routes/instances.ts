@@ -148,6 +148,8 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
 
             if (groupsErr) server.log.warn(`[DETAIL] Groups query error: ${groupsErr.message}`);
 
+            server.log.info(`[DETAIL] instance=${name} connectionStatus=${connectionStatus} groups=${(groups || []).length}`);
+
             return {
                 id: dbInstance.id,
                 name: dbInstance.name,

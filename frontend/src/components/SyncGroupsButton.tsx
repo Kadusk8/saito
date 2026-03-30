@@ -17,12 +17,12 @@ export function SyncGroupsButton({ instanceName, isConnected, onSynced }: SyncGr
     const handleSync = async () => {
         setIsSyncing(true);
         try {
-            await api.post(`/api/instances/${instanceName}/groups/sync`);
-
+            const result = await api.post(`/api/instances/${instanceName}/groups/sync`);
+            alert(`Sincronização concluída: ${result?.message || JSON.stringify(result)}`);
             if (onSynced) onSynced();
             else window.location.reload();
         } catch (error: any) {
-            alert(error.message);
+            alert(`Erro na sincronização: ${error.message}`);
         } finally {
             setIsSyncing(false);
         }
