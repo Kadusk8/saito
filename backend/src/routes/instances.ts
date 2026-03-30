@@ -485,19 +485,17 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
 
             const botId = botJid.split('@')[0];
 
-            // Sync ALL groups where bot is a member (admin or not)
-            const memberGroups = groups.filter((g: any) => {
-                const participants = g.participants || [];
-                return participants.some((p: any) => (p.id || p.phoneNumber || '').split('@')[0] === botId);
-            });
-
-            const adminCount = memberGroups.filter((g: any) => {
+            // Determine admin status per group using participants (if available)
+            const adminCount = groups.filter((g: any) => {
                 const participants = g.participants || [];
                 const botP = participants.find((p: any) => (p.id || p.phoneNumber || '').split('@')[0] === botId);
                 return botP?.admin === 'admin' || botP?.admin === 'superadmin' || botP?.admin === true;
             }).length;
 
-            server.log.info(`[SYNC] Found ${memberGroups.length} groups (${adminCount} admin, ${memberGroups.length - adminCount} member).`);
+            // Sync ALL groups the instance can see (participants array may be empty in some Evolution versions)
+            const memberGroups = groups;
+
+            server.log.info(`[SYNC] Found ${memberGroups.length} groups (${adminCount} with admin role detected).`);
 
             const { data: instanceData } = await supabaseAdmin.from('instances').select('id').eq('name', name).single();
             if (!instanceData) return reply.code(404).send({ error: 'Instance not found in database' });
@@ -509,7 +507,8 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
                 const existing = existingMap.get(g.id);
                 const participants = g.participants || [];
                 const botP = participants.find((p: any) => (p.id || p.phoneNumber || '').split('@')[0] === botId);
-                const isAdmin = botP?.admin === 'admin' || botP?.admin === 'superadmin' || botP?.admin === true;
+                // isAdmin only reliable when participants array is populated
+                const isAdmin = botP ? (botP.admin === 'admin' || botP.admin === 'superadmin' || botP.admin === true) : false;
 
                 const record: Record<string, any> = {
                     id: existing?.id || crypto.randomUUID(),
