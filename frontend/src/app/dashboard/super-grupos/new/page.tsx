@@ -63,27 +63,35 @@ export default function NewCampaignPage() {
             const supabase = createClient();
             const { data: { session } } = await supabase.auth.getSession();
 
-            // Fetch synced (admin) groups from DB
+            // Grupos sincronizados no banco = grupos onde o bot É admin
             const { data: dbGroups } = await supabase
                 .from('groups')
                 .select('id, name, jid')
                 .eq('instance_id', iId);
             const adminJids = new Set((dbGroups || []).map((g: any) => g.jid));
 
-            // Fetch all groups from Evolution API (admin + non-admin)
-            const res = await fetch(`${API}/api/instances/${iName}/groups/sync-list`, {
-                headers: { 'Authorization': `Bearer ${session?.access_token}` }
-            });
-            const allGroups: any[] = res.ok ? await res.json() : [];
+            // Tenta buscar TODOS os grupos da Evolution API para mostrar os não-admin também
+            let allEvolutionGroups: { jid: string; name: string; isAdmin: boolean }[] = [];
+            try {
+                const res = await fetch(`${API}/api/instances/${iName}/groups/sync-list`, {
+                    headers: { 'Authorization': `Bearer ${session?.access_token}` }
+                });
+                if (res.ok) {
+                    const evoGroups: any[] = await res.json();
+                    allEvolutionGroups = evoGroups.map((g: any) => ({
+                        jid: g.id,
+                        name: g.subject || g.id,
+                        // Prefer isAdmin from Evolution API; fallback to DB sync check
+                        isAdmin: g.isAdmin !== undefined ? g.isAdmin : adminJids.has(g.id),
+                    }));
+                }
+            } catch { /* ignora e usa somente o banco */ }
 
-            if (allGroups.length > 0) {
-                setAvailableGroups(allGroups.map((g: any) => ({
-                    jid: g.id,
-                    name: g.subject || g.id,
-                    isAdmin: adminJids.has(g.id),
-                })));
+            if (allEvolutionGroups.length > 0) {
+                // Mostra todos: admin (selecionáveis) e não-admin (desabilitados como indicação)
+                setAvailableGroups(allEvolutionGroups);
             } else {
-                // Fallback to just synced groups
+                // Fallback: apenas grupos sincronizados do banco (todos são admin)
                 setAvailableGroups((dbGroups || []).map((g: any) => ({ jid: g.jid, name: g.name || g.jid, isAdmin: true })));
             }
         } catch { setAvailableGroups([]); }

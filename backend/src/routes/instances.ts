@@ -105,11 +105,33 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
     });
 
     // Route to list all Evolution groups for an instance (without syncing to DB)
+    // Returns admin flag based on whether the bot is an admin participant
     server.get('/api/instances/:name/groups/sync-list', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
         try {
             const { name } = request.params as { name: string };
             const groups: any[] = await evolution.fetchAllGroups(name);
-            return groups.map((g: any) => ({ id: g.id, subject: g.subject || g.name || g.id }));
+
+            // Get bot JID to check admin status
+            let botJid: string | null = null;
+            try {
+                const instancesRes = await evolution.fetchInstances();
+                const instancesArray = Array.isArray(instancesRes) ? instancesRes : (instancesRes as any)?.data || [];
+                const myInstance = instancesArray.find((i: any) =>
+                    i.name === name || i.instance?.instanceName === name || i.instanceName === name
+                );
+                const rawJid = myInstance?.ownerJid || myInstance?.instance?.ownerJid;
+                botJid = rawJid ? rawJid.split('@')[0] : null;
+            } catch { /* can't determine admin, default to false */ }
+
+            return groups.map((g: any) => {
+                let isAdmin = false;
+                if (botJid) {
+                    const participants: any[] = g.participants || [];
+                    const botP = participants.find((p: any) => (p.id || '').split('@')[0] === botJid);
+                    isAdmin = botP?.admin === 'admin' || botP?.admin === 'superadmin' || botP?.admin === true;
+                }
+                return { id: g.id, subject: g.subject || g.name || g.id, isAdmin };
+            });
         } catch (error: any) {
             server.log.error('Error listing groups:', error.message);
             return reply.code(500).send({ error: error.message || 'Failed to list groups' });
