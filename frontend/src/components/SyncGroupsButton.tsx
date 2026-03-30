@@ -17,8 +17,7 @@ export function SyncGroupsButton({ instanceName, isConnected, onSynced }: SyncGr
     const handleSync = async () => {
         setIsSyncing(true);
         try {
-            const result = await api.post(`/api/instances/${instanceName}/groups/sync`);
-            alert(`Sincronização concluída: ${result?.message || JSON.stringify(result)}`);
+            await api.post(`/api/instances/${instanceName}/groups/sync`);
             if (onSynced) onSynced();
             else window.location.reload();
         } catch (error: any) {

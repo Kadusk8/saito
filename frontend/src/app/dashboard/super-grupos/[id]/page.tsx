@@ -366,20 +366,34 @@ export default function CampaignDetailPage() {
                             </h3>
                             <p className="text-sm text-foreground-muted font-medium mb-8 max-w-2xl leading-relaxed">Este link atua como um roteador inteligente. Ele sempre apontará para o grupo <strong>ativo</strong>, garantindo que nenhum lead fique de fora. Sempre que um grupo atinge o limite seguro de {campaign.overflow_limit} membros, o Saito substitui o convite instantaneamente para o próximo da fila.</p>
                             
-                            <div className="flex flex-col sm:flex-row gap-4 mb-2">
+                            {/* Permanent redirect URL */}
+                            <div className="flex flex-col sm:flex-row gap-4 mb-6">
+                                <div className="flex-1 flex items-center gap-3 bg-black/40 border border-brand/30 rounded-2xl px-5 py-2 shadow-inner group transition-colors hover:border-brand/50">
+                                    <span className="flex-1 text-sm font-semibold text-brand font-mono truncate py-2">
+                                        {`${process.env.NEXT_PUBLIC_BACKEND_URL || 'https://webhook.saito.app.br'}/join/${id}`}
+                                    </span>
+                                    <CopyBtn text={`${process.env.NEXT_PUBLIC_BACKEND_URL || 'https://webhook.saito.app.br'}/join/${id}`} />
+                                </div>
+                            </div>
+
+                            {/* Sync button + WhatsApp link status */}
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
                                 <button
                                     onClick={fetchInviteLink}
                                     disabled={loadingLink}
-                                    className="flex items-center justify-center gap-3 px-8 py-4 bg-brand hover:bg-brand-hover text-white sm:w-auto w-full text-sm font-extrabold rounded-2xl shadow-[0_0_20px_rgba(230,57,70,0.3)] hover:shadow-[0_0_30px_rgba(230,57,70,0.5)] transition-all active:scale-95 disabled:opacity-50"
+                                    className="flex items-center justify-center gap-2 px-5 py-2.5 bg-surface hover:bg-surface-hover border border-border-subtle hover:border-brand/40 text-neutral-300 hover:text-white text-sm font-bold rounded-xl transition-all disabled:opacity-50"
                                 >
-                                    {loadingLink ? <Loader2 className="w-5 h-5 animate-spin" /> : <Link2 className="w-5 h-5" />}
-                                    Gerar Link Mágico
+                                    {loadingLink ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                                    Sincronizar Link do Grupo Ativo
                                 </button>
-                                {inviteLink && (
-                                    <div className="flex-1 flex items-center gap-3 bg-black/40 border border-brand/30 rounded-2xl px-5 py-2 shadow-inner group transition-colors hover:border-brand/50">
-                                        <a href={inviteLink} target="_blank" rel="noopener" className="flex-1 text-sm font-semibold text-brand font-mono truncate py-2">{inviteLink}</a>
-                                        <CopyBtn text={inviteLink} />
-                                    </div>
+                                {inviteLink ? (
+                                    <span className="flex items-center gap-2 text-xs font-bold text-emerald-400">
+                                        <CheckCircle2 className="w-4 h-4" /> Link em cache — redirect instantâneo
+                                    </span>
+                                ) : (
+                                    <span className="flex items-center gap-2 text-xs font-medium text-neutral-500">
+                                        <AlertTriangle className="w-4 h-4" /> Sem cache — o redirect buscará o link na hora do clique
+                                    </span>
                                 )}
                             </div>
                         </div>

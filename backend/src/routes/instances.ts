@@ -458,7 +458,6 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             server.log.info(`[SYNC] Starting sync for instance: ${name}`);
 
             const groupsResponse = await evolution.fetchAllGroups(name);
-            server.log.info({ isArray: Array.isArray(groupsResponse), keys: groupsResponse && typeof groupsResponse === 'object' ? Object.keys(groupsResponse as any).slice(0, 5) : [] }, '[SYNC] Raw response type');
             const groups = Array.isArray(groupsResponse)
                 ? groupsResponse
                 : (groupsResponse as any)?.groups ?? (groupsResponse as any)?.data ?? [];
@@ -484,15 +483,6 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             }
 
             const botId = botJid.split('@')[0];
-            server.log.info(`[SYNC] botId=${botId}`);
-
-            // Log first group participant structure for debugging
-            if (groups.length > 0) {
-                const firstGroup = groups[0];
-                const participants0 = firstGroup.participants || [];
-                server.log.info({ groupId: firstGroup.id, participantCount: participants0.length, sampleParticipant: participants0[0] }, '[SYNC] First group participant sample');
-            }
-
             // Determine admin status per group using participants (if available)
             const adminCount = groups.filter((g: any) => {
                 const participants = g.participants || [];

@@ -396,6 +396,69 @@ export async function superGruposRoutes(
         }
     });
 
+    // Public redirect: /join/:campaignId → redirects to current active group's WhatsApp invite link
+    // No auth required — this is the shareable permanent link
+    server.get('/join/:campaignId', async (req: any, reply: any) => {
+        const { campaignId } = req.params as { campaignId: string };
+
+        try {
+            // Get active group with campaign+instance info
+            const { data: activeGroup } = await supabase
+                .from('launch_groups')
+                .select('*, campaign:launch_campaigns(*, instance:instances(name))')
+                .eq('campaign_id', campaignId)
+                .eq('is_active', true)
+                .maybeSingle();
+
+            if (!activeGroup) {
+                return reply.code(404).send('Nenhum grupo ativo encontrado para esta campanha.');
+            }
+
+            let inviteLink: string | null = activeGroup.invite_link || null;
+
+            // If no cached link, fetch fresh from Evolution API
+            if (!inviteLink) {
+                const instanceName = activeGroup.campaign?.instance?.name;
+                const baseUrl = process.env.EVOLUTION_URL;
+                const apiKey = process.env.EVOLUTION_GLOBAL_KEY;
+
+                if (instanceName && baseUrl && apiKey) {
+                    try {
+                        const evoRes = await fetch(
+                            `${baseUrl}/group/inviteCode/${instanceName}?groupJid=${activeGroup.group_jid}`,
+                            { headers: { 'apikey': apiKey } }
+                        );
+                        const res = await evoRes.json() as any;
+
+                        if (res?.inviteUrl) inviteLink = res.inviteUrl;
+                        else if (res?.inviteCode) inviteLink = res.inviteCode.startsWith('http') ? res.inviteCode : `https://chat.whatsapp.com/${res.inviteCode}`;
+                        else if (res?.code) inviteLink = res.code.startsWith('http') ? res.code : `https://chat.whatsapp.com/${res.code}`;
+                        else if (res?.link) inviteLink = res.link;
+
+                        if (inviteLink?.includes('chat.whatsapp.com/https://chat.whatsapp.com/')) {
+                            inviteLink = inviteLink.replace('https://chat.whatsapp.com/https://chat.whatsapp.com/', 'https://chat.whatsapp.com/');
+                        }
+
+                        if (inviteLink) {
+                            await supabase.from('launch_groups').update({ invite_link: inviteLink }).eq('id', activeGroup.id);
+                        }
+                    } catch (e: any) {
+                        server.log.error({ err: e }, '[JOIN] Failed to fetch invite link from Evolution');
+                    }
+                }
+            }
+
+            if (!inviteLink) {
+                return reply.code(503).send('Link de convite não disponível no momento. Tente novamente em instantes.');
+            }
+
+            return reply.redirect(inviteLink);
+        } catch (e: any) {
+            server.log.error({ err: e }, '[JOIN] Fatal error');
+            return reply.code(500).send('Erro interno. Tente novamente.');
+        }
+    });
+
     // ── C. CONTENT SCHEDULING ─────────────────────────────────────────────────
 
     // List scheduled messages for campaign

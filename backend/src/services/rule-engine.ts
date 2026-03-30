@@ -1,4 +1,4 @@
-import { redisConnection as redis, supabase, evolution } from '../db';
+import { redisConnection as redis, supabaseAdmin as supabase, evolution } from '../db';
 import { StrikeManager } from './strike-manager';
 import { AIService } from './ai-service';
 
@@ -135,8 +135,9 @@ export class RuleEngine {
             try {
                 await evolution.deleteMessage(instanceName, groupJid, message.key.id, false);
                 await StrikeManager.addStrike(groupId, senderJid, infractionReason, instanceName, groupJid);
-            } catch (err) {
-                console.error('[RULE-ENGINE] Failed to delete message or add strike:', err);
+                console.log(`[RULE-ENGINE] Deleted message in ${groupJid} — reason: ${infractionReason}`);
+            } catch (err: any) {
+                console.error(`[RULE-ENGINE] FAILED to delete message in ${groupJid} — ${err.message} (bot may not be admin)`);
             }
             return;
         }
@@ -148,8 +149,8 @@ export class RuleEngine {
                 try {
                     await evolution.deleteMessage(instanceName, groupJid, message.key.id, false);
                     await StrikeManager.addStrike(groupId, senderJid, `Filtro de IA: ${evaluation.reason}`, instanceName, groupJid);
-                } catch (err) {
-                    console.error('[RULE-ENGINE] Failed to delete message (AI blacklist):', err);
+                } catch (err: any) {
+                    console.error(`[RULE-ENGINE] FAILED to delete message (AI blacklist) in ${groupJid} — ${err.message} (bot may not be admin)`);
                 }
                 return;
             }

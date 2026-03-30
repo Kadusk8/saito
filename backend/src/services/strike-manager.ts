@@ -1,4 +1,4 @@
-import { redisConnection as redis, supabase, evolution } from '../db';
+import { redisConnection as redis, supabaseAdmin as supabase, evolution } from '../db';
 
 export class StrikeManager {
 

@@ -1,6 +1,6 @@
 import { Worker } from 'bullmq';
 import { RuleEngine } from '../services/rule-engine';
-import { redisConnection, supabase } from '../db';
+import { redisConnection, supabaseAdmin as supabase } from '../db';
 
 // Create a worker that processes Evolution Webhooks
 export const messageWorker = new Worker('message-processing', async (job) => {
@@ -86,7 +86,7 @@ export const messageWorker = new Worker('message-processing', async (job) => {
 
 }, { connection: redisConnection });
 
-messageWorker.on('completed', (job) => {
+messageWorker.on('completed', (_job) => {
     // console.log(`Processed webhook job ${job.id}`);
 });
 
