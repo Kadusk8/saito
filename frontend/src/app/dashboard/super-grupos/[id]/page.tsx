@@ -85,7 +85,11 @@ export default function CampaignDetailPage() {
             setCampaign(data);
             setScarcityEnabled(data.scarcity_enabled);
             setScarcityInterval(data.scarcity_interval_minutes || 60);
-            
+
+            // Load saved invite link from active group
+            const activeGroup = (data.launch_groups || []).find((g: any) => g.is_active);
+            if (activeGroup?.invite_link) setInviteLink(activeGroup.invite_link);
+
             if (data.launch_groups?.length > 0) {
                 fetchMembers(data.launch_groups.map((g: any) => g.id));
             }

@@ -1,22 +1,72 @@
+'use client';
+
+import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, MessageSquare, ShieldAlert, Bot, Settings2 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/server';
 import { SyncGroupsButton } from '@/components/SyncGroupsButton';
 import { DeleteGroupButton } from '@/components/DeleteGroupButton';
 import { CreateGroupButton } from '@/components/CreateGroupButton';
+import { createBrowserClient } from '@supabase/ssr';
+import { api } from '@/lib/api-client';
 
-export default async function InstanceGroupsPage({ params }: { params: Promise<{ name: string }> }) {
-    const { name } = await params;
+export default function InstanceGroupsPage({ params }: { params: Promise<{ name: string }> }) {
+    const { name } = use(params);
 
-    const supabase = await createClient();
-    const { data: instanceData } = await supabase.from('instances').select('id, name, status').eq('name', name).single();
+    const supabase = createBrowserClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
 
-    let monitoredGroups: any[] = [];
-    if (instanceData) {
-        const { data: groupsData } = await supabase.from('groups').select('*').eq('instance_id', instanceData.id);
-        if (groupsData) monitoredGroups = groupsData;
+    const [isConnected, setIsConnected] = useState(false);
+    const [instanceDbId, setInstanceDbId] = useState<string | null>(null);
+    const [monitoredGroups, setMonitoredGroups] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        async function load() {
+            try {
+                // Get live connection status from backend (merges Evolution API data)
+                const instancesData = await api.get('/api/instances');
+                const instances: any[] = instancesData?.data || [];
+                const instance = instances.find((i: any) => i.name === name);
+                if (instance) {
+                    setIsConnected(instance.connectionStatus === 'open');
+                }
+
+                // Get groups from Supabase directly (with RLS)
+                const { data: instanceRow } = await supabase
+                    .from('instances')
+                    .select('id')
+                    .eq('name', name)
+                    .single();
+
+                if (instanceRow) {
+                    setInstanceDbId(instanceRow.id);
+                    const { data: groupsData } = await supabase
+                        .from('groups')
+                        .select('*')
+                        .eq('instance_id', instanceRow.id);
+                    setMonitoredGroups(groupsData || []);
+                }
+            } catch (e) {
+                console.error('Failed to load instance data', e);
+            } finally {
+                setLoading(false);
+            }
+        }
+        load();
+    }, [name]);
+
+    if (loading) {
+        return (
+            <div className="p-8 pb-20 sm:p-12 w-full max-w-7xl mx-auto flex items-center justify-center min-h-[300px]">
+                <div className="flex flex-col items-center gap-3 text-foreground-muted">
+                    <MessageSquare className="w-10 h-10 animate-pulse text-brand" />
+                    <p>Carregando...</p>
+                </div>
+            </div>
+        );
     }
-    const isConnected = instanceData?.status === 'open';
 
     return (
         <div className="p-8 pb-20 sm:p-12 w-full max-w-7xl mx-auto space-y-10 relative">
@@ -44,7 +94,7 @@ export default async function InstanceGroupsPage({ params }: { params: Promise<{
                         </p>
                     </div>
                 </div>
-                {instanceData && (
+                {instanceDbId && (
                     <div className="flex flex-wrap items-center gap-3 shrink-0">
                         <CreateGroupButton instanceName={name} />
                         <SyncGroupsButton instanceName={name} isConnected={isConnected} />
@@ -61,7 +111,7 @@ export default async function InstanceGroupsPage({ params }: { params: Promise<{
                     <div>
                         <p className="text-white font-semibold text-lg">Instância Desconectada</p>
                         <p className="text-foreground-muted text-sm mt-1 max-w-md mx-auto">Conecte seu WhatsApp lendo o QR Code no painel de instâncias para visualizar e gerenciar os grupos.</p>
-                        <Link href="/dashboard/whatsapp" className="inline-block mt-6 px-6 py-2.5 bg-brand/10 hover:bg-brand/20 text-brand border border-brand/20 rounded-xl font-bold transition-all shadow-sm">
+                        <Link href="/dashboard/groups" className="inline-block mt-6 px-6 py-2.5 bg-brand/10 hover:bg-brand/20 text-brand border border-brand/20 rounded-xl font-bold transition-all shadow-sm">
                             Ir para Conexões
                         </Link>
                     </div>
@@ -93,7 +143,7 @@ export default async function InstanceGroupsPage({ params }: { params: Promise<{
                                         <span className="text-xs font-medium text-foreground-muted truncate block max-w-[180px] mt-1">{group.jid?.split('@')[0]}</span>
                                     </div>
                                 </div>
-                                
+
                                 {/* Moderation Toggle Indicator */}
                                 <div className="shrink-0 flex flex-col items-end gap-1">
                                     <span className="text-[10px] uppercase font-bold text-neutral-500 tracking-wider">Moderação</span>

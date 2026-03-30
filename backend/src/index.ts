@@ -3,6 +3,10 @@ import fastify from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import { supabase, redisConnection, messageQueue, evolution } from './db';
+// Start BullMQ workers in the same process
+import './workers/webhook-processor';
+import './workers/launch-message-worker';
+import './workers/launch-scarcity-worker';
 import { superGruposRoutes } from './super-grupos';
 import { plannerRoutes } from './planner';
 import billingRoutes from './routes/billing';

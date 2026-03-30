@@ -172,6 +172,10 @@ export async function superGruposRoutes(
             const body = createGroupsSchema.parse(req.body);
             const { count, name_pattern, admin_number } = body;
 
+        if (!admin_number) {
+            return reply.code(400).send({ error: 'admin_number é obrigatório para criar grupos. Informe seu número no formato: 5511999999999' });
+        }
+
         const { data: campaign } = await supabase
             .from('launch_campaigns')
             .select('*, instance:instances(name)')
@@ -645,6 +649,7 @@ export async function superGruposRoutes(
         let classification = 'cold';
         let keywords_matched: string[] = [];
         let gemini_reasoning = '';
+        let aiSucceeded = false;
 
         // Use AIService for analysis
         if (process.env.OPENAI_API_KEY) {
@@ -653,10 +658,14 @@ export async function superGruposRoutes(
                 classification = analysis.classification;
                 keywords_matched = analysis.keywords_matched;
                 gemini_reasoning = analysis.reasoning;
+                aiSucceeded = true;
             } catch (e) {
                 // fallback to simple keyword matching below
             }
         }
+
+        // Only run keyword matching if AI was not used or failed
+        if (!aiSucceeded) {
             const hotKeywords = ['parcelamento', 'parcela', 'desconto', 'garantia', 'como pagar', 'valor', 'preço', 'comprar', 'quero', 'compro'];
             const warmKeywords = ['quando', 'como funciona', 'tem suporte', 'serve para', 'é bom', 'resultado'];
             const lower = message_text.toLowerCase();
@@ -664,6 +673,7 @@ export async function superGruposRoutes(
             const warmMatches = warmKeywords.filter(k => lower.includes(k));
             if (hotMatches.length > 0) { classification = 'hot'; keywords_matched = hotMatches; }
             else if (warmMatches.length > 0) { classification = 'warm'; keywords_matched = warmMatches; }
+        }
 
         const { data, error } = await supabase
             .from('launch_leads')

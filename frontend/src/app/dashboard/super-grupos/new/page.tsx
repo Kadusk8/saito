@@ -17,7 +17,7 @@ export default function NewCampaignPage() {
     const [step, setStep] = useState(0);
     const [saving, setSaving] = useState(false);
     const [instances, setInstances] = useState<any[]>([]);
-    const [availableGroups, setAvailableGroups] = useState<any[]>([]);
+    const [availableGroups, setAvailableGroups] = useState<{ jid: string; name: string; isAdmin: boolean }[]>([]);
     const [loadingGroups, setLoadingGroups] = useState(false);
     const [groupSearch, setGroupSearch] = useState('');
 
@@ -56,16 +56,36 @@ export default function NewCampaignPage() {
         })();
     }, []);
 
-    async function loadGroups(iId: string) {
+    async function loadGroups(iId: string, iName: string) {
         if (!iId) return;
         setLoadingGroups(true);
         try {
             const supabase = createClient();
-            const { data } = await supabase
+            const { data: { session } } = await supabase.auth.getSession();
+
+            // Fetch synced (admin) groups from DB
+            const { data: dbGroups } = await supabase
                 .from('groups')
                 .select('id, name, jid')
                 .eq('instance_id', iId);
-            setAvailableGroups((data || []).map((g: any) => ({ jid: g.jid, name: g.name || g.jid })));
+            const adminJids = new Set((dbGroups || []).map((g: any) => g.jid));
+
+            // Fetch all groups from Evolution API (admin + non-admin)
+            const res = await fetch(`${API}/api/instances/${iName}/groups/sync-list`, {
+                headers: { 'Authorization': `Bearer ${session?.access_token}` }
+            });
+            const allGroups: any[] = res.ok ? await res.json() : [];
+
+            if (allGroups.length > 0) {
+                setAvailableGroups(allGroups.map((g: any) => ({
+                    jid: g.id,
+                    name: g.subject || g.id,
+                    isAdmin: adminJids.has(g.id),
+                })));
+            } else {
+                // Fallback to just synced groups
+                setAvailableGroups((dbGroups || []).map((g: any) => ({ jid: g.jid, name: g.name || g.jid, isAdmin: true })));
+            }
         } catch { setAvailableGroups([]); }
         finally { setLoadingGroups(false); }
     }
@@ -73,7 +93,7 @@ export default function NewCampaignPage() {
     function selectInstance(id: string, iName: string) {
         setInstanceId(id);
         setInstanceName(iName);
-        loadGroups(id);
+        loadGroups(id, iName);
     }
 
     function toggleGroup(jid: string, name: string) {
@@ -335,15 +355,26 @@ export default function NewCampaignPage() {
                                 {loadingGroups ? (
                                     <div className="flex items-center gap-2 text-neutral-500 py-4 text-sm"><Loader2 className="w-4 h-4 animate-spin" />Carregando grupos...</div>
                                 ) : (
-                                    <div className="flex flex-wrap gap-2 max-h-40 overflow-y-auto">
+                                    <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
                                         {filteredGroups.map(g => {
                                             const sel = selectedGroups.find(s => s.group_jid === g.jid);
                                             return (
                                                 <button
                                                     key={g.jid}
-                                                    onClick={() => toggleGroup(g.jid, g.name)}
-                                                    className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${sel ? 'bg-brand border-brand text-white' : 'border-border text-neutral-400 hover:text-white hover:border-neutral-500'}`}
+                                                    onClick={() => g.isAdmin ? toggleGroup(g.jid, g.name) : undefined}
+                                                    title={!g.isAdmin ? 'O bot não é admin neste grupo — sincronize primeiro' : undefined}
+                                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                                                        !g.isAdmin
+                                                            ? 'border-border text-neutral-600 cursor-not-allowed opacity-50'
+                                                            : sel
+                                                                ? 'bg-brand border-brand text-white'
+                                                                : 'border-border text-neutral-400 hover:text-white hover:border-neutral-500'
+                                                    }`}
                                                 >
+                                                    {g.isAdmin
+                                                        ? <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                                                        : <span className="w-1.5 h-1.5 rounded-full bg-neutral-600 shrink-0" />
+                                                    }
                                                     {g.name}
                                                 </button>
                                             );
@@ -352,6 +383,9 @@ export default function NewCampaignPage() {
                                         {!instanceId && <p className="text-neutral-600 text-sm">Selecione uma instância no passo anterior.</p>}
                                     </div>
                                 )}
+                                    {availableGroups.some(g => !g.isAdmin) && (
+                                        <p className="text-xs text-neutral-600 mt-2">🟢 Admin &nbsp;⚫ Não sincronizado (o bot não é admin)</p>
+                                    )}
                             </div>
 
                             {selectedGroups.length > 0 && (
