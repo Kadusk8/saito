@@ -484,6 +484,14 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             }
 
             const botId = botJid.split('@')[0];
+            server.log.info(`[SYNC] botId=${botId}`);
+
+            // Log first group participant structure for debugging
+            if (groups.length > 0) {
+                const firstGroup = groups[0];
+                const participants0 = firstGroup.participants || [];
+                server.log.info({ groupId: firstGroup.id, participantCount: participants0.length, sampleParticipant: participants0[0] }, '[SYNC] First group participant sample');
+            }
 
             // Determine admin status per group using participants (if available)
             const adminCount = groups.filter((g: any) => {
