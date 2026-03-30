@@ -104,6 +104,53 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
         }
     });
 
+    // Route to get single instance status + its groups from DB
+    server.get('/api/instances/:name/detail', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {
+        try {
+            const { name } = request.params as { name: string };
+
+            // Live status from Evolution API
+            let connectionStatus = 'disconnected';
+            try {
+                const evoInstances = await evolution.fetchInstances();
+                const evoArray = Array.isArray(evoInstances) ? evoInstances : (evoInstances as any)?.data || [];
+                const evoInst = evoArray.find((i: any) =>
+                    i.name === name || i.instance?.instanceName === name || i.instanceName === name
+                );
+                if (evoInst) {
+                    connectionStatus = evoInst.connectionStatus || evoInst.status || 'open';
+                }
+            } catch { /* fallback to disconnected */ }
+
+            // Instance + groups from DB (scoped to org)
+            const { data: dbInstance, error: instErr } = await supabase
+                .from('instances')
+                .select('id, name')
+                .eq('name', name)
+                .eq('organization_id', request.user!.organization_id!)
+                .single();
+
+            if (instErr || !dbInstance) {
+                return reply.code(404).send({ error: 'Instance not found' });
+            }
+
+            const { data: groups } = await supabase
+                .from('groups')
+                .select('*')
+                .eq('instance_id', dbInstance.id);
+
+            return {
+                id: dbInstance.id,
+                name: dbInstance.name,
+                connectionStatus,
+                groups: groups || [],
+            };
+        } catch (error: any) {
+            server.log.error('Error fetching instance detail:', error.message);
+            return reply.code(500).send({ error: error.message });
+        }
+    });
+
     // Route to list all Evolution groups for an instance (without syncing to DB)
     // Returns admin flag based on whether the bot is an admin participant
     server.get('/api/instances/:name/groups/sync-list', { preHandler: [authenticate] }, async (request: AuthenticatedRequest, reply) => {

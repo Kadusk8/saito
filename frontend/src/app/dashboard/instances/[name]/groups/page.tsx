@@ -6,16 +6,10 @@ import { ArrowLeft, MessageSquare, ShieldAlert, Bot, Settings2 } from 'lucide-re
 import { SyncGroupsButton } from '@/components/SyncGroupsButton';
 import { DeleteGroupButton } from '@/components/DeleteGroupButton';
 import { CreateGroupButton } from '@/components/CreateGroupButton';
-import { createBrowserClient } from '@supabase/ssr';
 import { api } from '@/lib/api-client';
 
 export default function InstanceGroupsPage({ params }: { params: Promise<{ name: string }> }) {
     const { name } = use(params);
-
-    const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-    );
 
     const [isConnected, setIsConnected] = useState(false);
     const [instanceDbId, setInstanceDbId] = useState<string | null>(null);
@@ -23,39 +17,22 @@ export default function InstanceGroupsPage({ params }: { params: Promise<{ name:
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        async function load() {
-            try {
-                // Get live connection status from backend (merges Evolution API data)
-                const instancesData = await api.get('/api/instances');
-                const instances: any[] = instancesData?.data || [];
-                const instance = instances.find((i: any) => i.name === name);
-                if (instance) {
-                    setIsConnected(instance.connectionStatus === 'open');
-                }
-
-                // Get groups from Supabase directly (with RLS)
-                const { data: instanceRow } = await supabase
-                    .from('instances')
-                    .select('id')
-                    .eq('name', name)
-                    .single();
-
-                if (instanceRow) {
-                    setInstanceDbId(instanceRow.id);
-                    const { data: groupsData } = await supabase
-                        .from('groups')
-                        .select('*')
-                        .eq('instance_id', instanceRow.id);
-                    setMonitoredGroups(groupsData || []);
-                }
-            } catch (e) {
-                console.error('Failed to load instance data', e);
-            } finally {
-                setLoading(false);
-            }
-        }
         load();
     }, [name]);
+
+    async function load() {
+        setLoading(true);
+        try {
+            const data = await api.get(`/api/instances/${name}/detail`);
+            setInstanceDbId(data.id);
+            setIsConnected(data.connectionStatus === 'open');
+            setMonitoredGroups(data.groups || []);
+        } catch (e) {
+            console.error('Failed to load instance data', e);
+        } finally {
+            setLoading(false);
+        }
+    }
 
     if (loading) {
         return (
@@ -97,7 +74,7 @@ export default function InstanceGroupsPage({ params }: { params: Promise<{ name:
                 {instanceDbId && (
                     <div className="flex flex-wrap items-center gap-3 shrink-0">
                         <CreateGroupButton instanceName={name} />
-                        <SyncGroupsButton instanceName={name} isConnected={isConnected} />
+                        <SyncGroupsButton instanceName={name} isConnected={isConnected} onSynced={load} />
                     </div>
                 )}
             </div>
@@ -182,7 +159,7 @@ export default function InstanceGroupsPage({ params }: { params: Promise<{ name:
                                     Painel de Regras
                                 </Link>
                                 <div className="flex items-center gap-3">
-                                    <DeleteGroupButton groupId={group.id} groupName={group.name} />
+                                    <DeleteGroupButton groupId={group.id} groupName={group.name} onDeleted={load} />
                                 </div>
                             </div>
                         </div>

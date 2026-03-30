@@ -354,26 +354,42 @@ export async function superGruposRoutes(
             );
 
             const res = await evoRes.json() as any;
+            server.log.info({ evoStatus: evoRes.status, res }, '[INVITE-LINK] Evolution API raw response');
 
-            let inviteLink = null;
-            if (res?.inviteUrl) {
+            let inviteLink: string | null = null;
+
+            // Handle various Evolution API response formats
+            if (res?.inviteUrl && typeof res.inviteUrl === 'string') {
                 inviteLink = res.inviteUrl;
-            } else if (res?.code || res?.inviteCode) {
-                inviteLink = `https://chat.whatsapp.com/${res.code || res.inviteCode}`;
+            } else if (res?.inviteCode && typeof res.inviteCode === 'string') {
+                // Could be just the code or a full URL
+                inviteLink = res.inviteCode.startsWith('http')
+                    ? res.inviteCode
+                    : `https://chat.whatsapp.com/${res.inviteCode}`;
+            } else if (res?.code && typeof res.code === 'string') {
+                inviteLink = res.code.startsWith('http')
+                    ? res.code
+                    : `https://chat.whatsapp.com/${res.code}`;
+            } else if (res?.link && typeof res.link === 'string') {
+                inviteLink = res.link;
             }
 
-            // Cleanup any double prefix if the API returns a full URL instead of just the code
-            if (inviteLink && inviteLink.includes('chat.whatsapp.com/https://chat.whatsapp.com/')) {
+            // Cleanup double prefix
+            if (inviteLink?.includes('chat.whatsapp.com/https://chat.whatsapp.com/')) {
                 inviteLink = inviteLink.replace('https://chat.whatsapp.com/https://chat.whatsapp.com/', 'https://chat.whatsapp.com/');
             }
 
             if (inviteLink) {
                 await supabase.from('launch_groups').update({ invite_link: inviteLink }).eq('id', activeGroup.id);
             } else {
-                server.log.warn({ res }, '[INVITE-LINK] Evolution API returned no invite link');
+                server.log.warn({ res, evoStatus: evoRes.status }, '[INVITE-LINK] Evolution API returned no invite link');
             }
 
-            return { invite_link: inviteLink, active_group: activeGroup };
+            return {
+                invite_link: inviteLink,
+                active_group: activeGroup,
+                _debug: process.env.NODE_ENV !== 'production' ? res : undefined,
+            };
         } catch (e: any) {
             server.log.error({ err: e }, '[INVITE-LINK] Fatal error');
             return reply.code(500).send({ error: e.message });

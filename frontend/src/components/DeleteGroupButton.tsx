@@ -27,7 +27,7 @@ export function DeleteGroupButton({ groupId, groupName, onDeleted }: DeleteGroup
             await api.delete(`/api/groups/${groupId}`);
 
             if (onDeleted) onDeleted();
-            window.location.reload();
+            else window.location.reload();
         } catch (error: any) {
             alert(error.message);
         } finally {

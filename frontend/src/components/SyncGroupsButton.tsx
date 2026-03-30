@@ -6,11 +6,12 @@ import { Loader2 } from 'lucide-react';
 interface SyncGroupsButtonProps {
     instanceName: string;
     isConnected: boolean;
+    onSynced?: () => void;
 }
 
 import { api } from '@/lib/api-client';
 
-export function SyncGroupsButton({ instanceName, isConnected }: SyncGroupsButtonProps) {
+export function SyncGroupsButton({ instanceName, isConnected, onSynced }: SyncGroupsButtonProps) {
     const [isSyncing, setIsSyncing] = useState(false);
 
     const handleSync = async () => {
@@ -18,8 +19,8 @@ export function SyncGroupsButton({ instanceName, isConnected }: SyncGroupsButton
         try {
             await api.post(`/api/instances/${instanceName}/groups/sync`);
 
-            // Sync successful, reload to show the groups
-            window.location.reload();
+            if (onSynced) onSynced();
+            else window.location.reload();
         } catch (error: any) {
             alert(error.message);
         } finally {
