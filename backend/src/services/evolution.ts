@@ -1,6 +1,5 @@
 // Simple Evolution API Client
 import * as fs from 'fs';
-import * as path from 'path';
 
 export class EvolutionAPI {
     private baseUrl: string;
@@ -75,7 +74,8 @@ export class EvolutionAPI {
     }
 
     async fetchGroupParticipants(instanceName: string, groupJid: string) {
-        return this.request(`/group/participants/${instanceName}?groupJid=${encodeURIComponent(groupJid)}`, 'GET');
+        // Try the group info endpoint which includes participants
+        return this.request(`/group/findGroupInfos/${instanceName}?groupJid=${encodeURIComponent(groupJid)}`, 'GET');
     }
 
     // --- Instance Management ---

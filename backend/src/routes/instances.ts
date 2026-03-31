@@ -499,6 +499,20 @@ export default async function instanceRoutes(server: FastifyInstance, evolution:
             const botId = botJid.split('@')[0];
             server.log.info(`[SYNC] Bot ID: ${botId}, fetching participants per group to detect admin status`);
 
+            // Log raw first group to understand the structure from fetchAllGroups
+            if (groups.length > 0) {
+                const sample = groups[0];
+                server.log.info({ groupId: sample.id, subject: sample.subject, participantCount: (sample.participants || []).length, firstParticipant: (sample.participants || [])[0] }, '[SYNC-DEBUG] First group raw sample from fetchAllGroups');
+
+                // Also test the per-group participants endpoint for the first group
+                try {
+                    const partSample = await evolution.fetchGroupParticipants(name, sample.id);
+                    server.log.info({ partSample }, '[SYNC-DEBUG] fetchGroupParticipants raw response for first group');
+                } catch (e: any) {
+                    server.log.warn(`[SYNC-DEBUG] fetchGroupParticipants failed: ${e.message}`);
+                }
+            }
+
             const { data: instanceData } = await supabaseAdmin.from('instances').select('id').eq('name', name).single();
             if (!instanceData) return reply.code(404).send({ error: 'Instance not found in database' });
 
